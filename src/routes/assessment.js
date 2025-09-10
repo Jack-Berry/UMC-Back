@@ -13,15 +13,14 @@ const router = express.Router();
  * }
  */
 router.post("/:type", async (req, res) => {
+  console.log("Incoming assessment submission:", req.params, req.body);
   const assessmentType = req.params.type;
   const { userId, answers } = req.body;
 
   if (!userId || !assessmentType || !Array.isArray(answers)) {
-    return res
-      .status(400)
-      .json({
-        error: "Missing required data: userId, assessmentType, answers[]",
-      });
+    return res.status(400).json({
+      error: "Missing required data: userId, assessmentType, answers[]",
+    });
   }
   if (answers.length === 0) {
     return res.status(400).json({ error: "answers[] cannot be empty" });
@@ -39,11 +38,9 @@ router.post("/:type", async (req, res) => {
         .json({ error: `answers[${i}].questionId must be a non-empty string` });
     }
     if (typeof questionText !== "string" || questionText.trim() === "") {
-      return res
-        .status(400)
-        .json({
-          error: `answers[${i}].questionText must be a non-empty string`,
-        });
+      return res.status(400).json({
+        error: `answers[${i}].questionText must be a non-empty string`,
+      });
     }
     if (typeof category !== "string" || category.trim() === "") {
       return res
@@ -52,11 +49,9 @@ router.post("/:type", async (req, res) => {
     }
     const intScore = Number(score);
     if (!Number.isInteger(intScore) || intScore < 1 || intScore > 5) {
-      return res
-        .status(400)
-        .json({
-          error: `answers[${i}].score must be an integer between 1 and 5`,
-        });
+      return res.status(400).json({
+        error: `answers[${i}].score must be an integer between 1 and 5`,
+      });
     }
   }
 
