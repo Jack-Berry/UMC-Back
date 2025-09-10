@@ -1,12 +1,41 @@
 const { Pool } = require("pg");
 require("dotenv").config();
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-});
+let pool;
+let isConnected = false;
 
-module.exports = pool;
+// const pool = new Pool({
+//   host: process.env.DB_HOST,
+//   port: process.env.DB_PORT,
+//   user: process.env.DB_USER,
+//   password: process.env.DB_PASSWORD,
+//   database: process.env.DB_NAME,
+// });
+
+try {
+  pool = new Pool({
+    host: process.env.PGHOST,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD || undefined,
+    database: process.env.PGDATABASE,
+    port: Number(process.env.PGPORT),
+  });
+
+  // Try a test connection on startup
+  pool
+    .connect()
+    .then((client) => {
+      console.log("✅ Connected to Postgres");
+      isConnected = true;
+      client.release();
+    })
+    .catch((err) => {
+      console.error("Could not connect to Postgres:", err.message);
+      isConnected = false;
+    });
+} catch (err) {
+  console.error("Pool init error:", err.message);
+  isConnected = false;
+}
+
+module.exports = { pool, isConnected };
