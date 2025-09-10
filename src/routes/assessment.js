@@ -1,7 +1,7 @@
 // src/routes/assessment.js
 
 const express = require("express");
-const pool = require("../db");
+const { pool } = require("../db");
 const router = express.Router();
 
 // POST /api/assessment
