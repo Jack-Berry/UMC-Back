@@ -3,7 +3,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const authRoutes = require("./src/routes/authRoutes");
 const assessmentRoutes = require("./src/routes/assessment");
-const { pool, isConnected } = require("./db"); // 👈 import the DB wrapper we updated
+const { pool, isConnected } = require("./src/db");
 
 dotenv.config();
 
