@@ -16,16 +16,19 @@ try {
   pool = new Pool({
     host: process.env.PGHOST,
     user: process.env.PGUSER,
-    password: process.env.PGPASSWORD || undefined,
+    password: process.env.PGPASSWORD,
     database: process.env.PGDATABASE,
     port: Number(process.env.PGPORT),
+    ssl: {
+      rejectUnauthorized: false,
+    },
   });
 
   // Try a test connection on startup
   pool
     .connect()
     .then((client) => {
-      console.log("✅ Connected to Postgres");
+      console.log("Connected to Postgres");
       isConnected = true;
       client.release();
     })
