@@ -4,13 +4,16 @@ const { pool } = require("../db"); // ✅ destructure pool from exports
 
 const register = async (req, res) => {
   const { name, email, password } = req.body;
+
+  const normalisedEmail = email.trim().toLowerCase();
+
   console.log("Register endpoint hit with:", req.body);
 
   try {
     const hashed = await bcrypt.hash(password, 10);
     const result = await pool.query(
       "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *",
-      [name, email, hashed]
+      [name, normalisedEmail, hashed]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -21,11 +24,14 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
   const { email, password } = req.body;
+
+  const normalisedEmail = email.trim().toLowerCase();
+
   console.log("Login attempt with:", email, password);
 
   try {
     const result = await pool.query("SELECT * FROM users WHERE email = $1", [
-      email,
+      normalisedEmail,
     ]);
     const user = result.rows[0];
     console.log("User from DB:", user);

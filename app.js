@@ -1,13 +1,24 @@
 const express = require("express");
+const helmet = require("helmet");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const authRoutes = require("./src/routes/authRoutes");
 const assessmentRoutes = require("./src/routes/assessment");
-const { pool, checkConnection } = require("./src/db"); // ✅ changed
+const { pool, checkConnection } = require("./src/db");
+const rateLimit = require("express-rate-limit");
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests
+});
 
 dotenv.config();
 
 const app = express();
+
+app.use(helmet());
+
+app.use("/api/", apiLimiter);
 
 app.use(
   cors({
