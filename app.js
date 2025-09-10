@@ -3,7 +3,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const authRoutes = require("./src/routes/authRoutes");
 const assessmentRoutes = require("./src/routes/assessment");
-const { pool, isConnected } = require("./src/db");
+const { pool, checkConnection } = require("./src/db"); // ✅ changed
 
 dotenv.config();
 
@@ -21,26 +21,24 @@ app.use(
 );
 app.use(express.json());
 
-// 🔹 Add a status route for demo/testing
-app.get("/api/status", (req, res) => {
-  if (!isConnected) {
-    return res.json({
-      status: "ok",
-      db: "disconnected",
-      message: "API is live, DB not connected – showing mock data",
-    });
-  }
+// 🔹 Live DB status check
+app.get("/api/status", async (req, res) => {
+  const dbOk = await checkConnection();
 
   res.json({
     status: "ok",
-    db: "connected",
-    message: "API and DB are both live",
+    db: dbOk ? "connected" : "disconnected",
+    message: dbOk
+      ? "API and DB are both live"
+      : "API is live, DB not connected – showing mock data",
   });
 });
 
-// 🔹 Example mock fallback route for assessment
+// 🔹 Example route with fallback
 app.get("/api/demo-assessment", async (req, res) => {
-  if (!isConnected) {
+  const dbOk = await checkConnection();
+
+  if (!dbOk) {
     return res.json({
       status: "ok",
       source: "mock",
