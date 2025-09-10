@@ -1,7 +1,6 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const db = require("../db");
-const pool = require("../db");
+const { pool } = require("../db"); // ✅ destructure pool from exports
 
 const register = async (req, res) => {
   const { name, email, password } = req.body;
@@ -9,27 +8,27 @@ const register = async (req, res) => {
 
   try {
     const hashed = await bcrypt.hash(password, 10);
-    const result = await db.query(
+    const result = await pool.query(
       "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *",
       [name, email, hashed]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Register error:", err);
     res.status(500).json({ error: "User registration failed" });
   }
 };
 
 const login = async (req, res) => {
   const { email, password } = req.body;
-  console.log("Login attempt with:", email, password); // ADD THIS
+  console.log("Login attempt with:", email, password);
 
   try {
-    const result = await db.query("SELECT * FROM users WHERE email = $1", [
+    const result = await pool.query("SELECT * FROM users WHERE email = $1", [
       email,
     ]);
     const user = result.rows[0];
-    console.log("User from DB:", user); // ADD THIS
+    console.log("User from DB:", user);
 
     if (!user) {
       console.log("No user found");
@@ -37,7 +36,7 @@ const login = async (req, res) => {
     }
 
     const match = await bcrypt.compare(password, user.password);
-    console.log("Password match:", match); // ADD THIS
+    console.log("Password match:", match);
 
     if (!match) {
       console.log("Incorrect password");
@@ -58,7 +57,7 @@ const login = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Login error:", err); // IMPROVE THIS
+    console.error("Login error:", err);
     res.status(500).json({ error: "Login failed" });
   }
 };
