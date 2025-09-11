@@ -13,6 +13,17 @@ const apiLimiter = rateLimit({
   max: 100, // limit each IP to 100 requests
 });
 
+const corsOptions = {
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://uselessmen.org",
+    "https://www.uselessmen.org",
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
 dotenv.config();
 
 const app = express();
@@ -21,22 +32,11 @@ app.set("trust proxy", 1);
 app.use(express.json());
 
 app.use(helmet());
+app.use(cors(corsOptions));
 
 app.use("/api/", apiLimiter);
 
 app.use("/api/users", userRoutes);
-
-app.use(
-  cors({
-    origin: [
-      "https://uselessmen.org",
-      "https://www.uselessmen.org",
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ],
-    credentials: true,
-  })
-);
 
 // 🔹 Live DB status check
 app.get("/api/status", async (req, res) => {
