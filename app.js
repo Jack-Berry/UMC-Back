@@ -4,6 +4,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const authRoutes = require("./src/routes/authRoutes");
 const assessmentRoutes = require("./src/routes/assessment");
+const userRoutes = require("./src/routes/userRoutes");
 const { pool, checkConnection } = require("./src/db");
 const rateLimit = require("express-rate-limit");
 
@@ -16,9 +17,13 @@ dotenv.config();
 
 const app = express();
 
+app.use(express.json());
+
 app.use(helmet());
 
 app.use("/api/", apiLimiter);
+
+app.use("/api/users", userRoutes);
 
 app.use(
   cors({
@@ -31,7 +36,6 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
 
 // 🔹 Live DB status check
 app.get("/api/status", async (req, res) => {
