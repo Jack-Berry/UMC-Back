@@ -1,13 +1,21 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { pool } = require("../db"); // ✅ destructure pool from exports
+const { pool } = require("../db");
+
+// Helper to generate tokens
+function generateTokens(userId) {
+  const accessToken = jwt.sign({ userId }, process.env.JWT_SECRET, {
+    expiresIn: "1h",
+  });
+  const refreshToken = jwt.sign({ userId }, process.env.JWT_REFRESH_SECRET, {
+    expiresIn: "7d",
+  });
+  return { accessToken, refreshToken };
+}
 
 const register = async (req, res) => {
   const { name, email, password } = req.body;
-
   const normalisedEmail = email.trim().toLowerCase();
-
-  console.log("Register endpoint hit with:", req.body);
 
   try {
     const hashed = await bcrypt.hash(password, 10);
@@ -15,7 +23,24 @@ const register = async (req, res) => {
       "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *",
       [name, normalisedEmail, hashed]
     );
-    res.status(201).json(result.rows[0]);
+
+    // Generate tokens
+    const { accessToken, refreshToken } = generateTokens(result.rows[0].id);
+    await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
+      refreshToken,
+      result.rows[0].id,
+    ]);
+
+    res.status(201).json({
+      accessToken,
+      refreshToken,
+      user: {
+        id: result.rows[0].id,
+        name: result.rows[0].name,
+        email: result.rows[0].email,
+        has_completed_assessment: result.rows[0].has_completed_assessment,
+      },
+    });
   } catch (err) {
     console.error("Register error:", err);
     res.status(500).json({ error: "User registration failed" });
@@ -24,37 +49,29 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
   const { email, password } = req.body;
-
   const normalisedEmail = email.trim().toLowerCase();
-
-  console.log("Login attempt with:", email, password);
 
   try {
     const result = await pool.query("SELECT * FROM users WHERE email = $1", [
       normalisedEmail,
     ]);
     const user = result.rows[0];
-    console.log("User from DB:", user);
 
-    if (!user) {
-      console.log("No user found");
-      return res.status(401).json({ error: "Invalid email" });
-    }
+    if (!user) return res.status(401).json({ error: "Invalid email" });
 
     const match = await bcrypt.compare(password, user.password);
-    console.log("Password match:", match);
+    if (!match) return res.status(401).json({ error: "Invalid password" });
 
-    if (!match) {
-      console.log("Incorrect password");
-      return res.status(401).json({ error: "Invalid password" });
-    }
-
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
-      expiresIn: "1h",
-    });
+    // Generate new tokens
+    const { accessToken, refreshToken } = generateTokens(user.id);
+    await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
+      refreshToken,
+      user.id,
+    ]);
 
     res.json({
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         name: user.name,
@@ -68,14 +85,50 @@ const login = async (req, res) => {
   }
 };
 
+const refresh = async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) return res.status(401).json({ error: "Missing token" });
+
+  try {
+    // Check if refresh token exists in DB
+    const result = await pool.query(
+      "SELECT * FROM users WHERE refresh_token = $1",
+      [refreshToken]
+    );
+    if (result.rows.length === 0)
+      return res.status(403).json({ error: "Invalid refresh token" });
+
+    jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, (err, decoded) => {
+      if (err)
+        return res
+          .status(403)
+          .json({ error: "Expired or invalid refresh token" });
+
+      const { accessToken, refreshToken: newRefreshToken } = generateTokens(
+        decoded.userId
+      );
+
+      // Save new refresh token (rotate it)
+      pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
+        newRefreshToken,
+        decoded.userId,
+      ]);
+
+      res.json({ accessToken, refreshToken: newRefreshToken });
+    });
+  } catch (err) {
+    console.error("Refresh error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
 const fetchUserByID = async (req, res) => {
   const { id } = req.params;
 
   try {
     const result = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0)
       return res.status(404).json({ error: "User not found" });
-    }
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -84,4 +137,4 @@ const fetchUserByID = async (req, res) => {
   }
 };
 
-module.exports = { register, login, fetchUserByID };
+module.exports = { register, login, refresh, fetchUserByID };
