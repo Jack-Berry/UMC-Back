@@ -10,7 +10,7 @@ const {
 
 router.post("/register", register);
 router.post("/login", login);
-router.post("/refresh", refresh); // 👈 new
+router.post("/refresh", refresh);
 router.get("/profile", authenticateToken, (req, res) => {
   res.json({ message: "This is a protected route", user: req.user });
 });
