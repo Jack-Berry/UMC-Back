@@ -7,6 +7,9 @@ const assessmentRoutes = require("./src/routes/assessment");
 const userRoutes = require("./src/routes/userRoutes");
 const { pool, checkConnection } = require("./src/db");
 const rateLimit = require("express-rate-limit");
+const authenticateToken = require("./src/middleware/authMiddleware");
+const requireAdmin = require("./src/middleware/requireAdmin");
+const adminAssessmentRouter = require(".src//routes/adminAssessment");
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -35,8 +38,13 @@ app.use(helmet());
 app.use(cors(corsOptions));
 
 app.use("/api/", apiLimiter);
-
 app.use("/api/users", userRoutes);
+app.use(
+  "/api/admin/assessment",
+  authenticateToken,
+  requireAdmin,
+  adminAssessmentRouter
+);
 
 // 🔹 Live DB status check
 app.get("/api/status", async (req, res) => {

@@ -3,13 +3,16 @@ const jwt = require("jsonwebtoken");
 const { pool } = require("../db");
 
 // Helper to generate tokens
-function generateTokens(userId) {
-  const accessToken = jwt.sign({ userId }, process.env.JWT_SECRET, {
+function generateTokens(user) {
+  const accessPayload = { userId: user.id, is_admin: user.is_admin };
+  const accessToken = jwt.sign(accessPayload, process.env.JWT_SECRET, {
     expiresIn: "1h",
   });
-  const refreshToken = jwt.sign({ userId }, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: "7d",
-  });
+  const refreshToken = jwt.sign(
+    { userId: user.id },
+    process.env.JWT_REFRESH_SECRET,
+    { expiresIn: "7d" }
+  );
   return { accessToken, refreshToken };
 }
 
@@ -24,21 +27,24 @@ const register = async (req, res) => {
       [name, normalisedEmail, hashed]
     );
 
+    const user = result.rows[0];
+
     // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(result.rows[0].id);
+    const { accessToken, refreshToken } = generateTokens(user);
     await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
       refreshToken,
-      result.rows[0].id,
+      user.id,
     ]);
 
     res.status(201).json({
       accessToken,
       refreshToken,
       user: {
-        id: result.rows[0].id,
-        name: result.rows[0].name,
-        email: result.rows[0].email,
-        has_completed_assessment: result.rows[0].has_completed_assessment,
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        has_completed_assessment: user.has_completed_assessment,
+        is_admin: user.is_admin, // include admin flag
       },
     });
   } catch (err) {
@@ -63,7 +69,7 @@ const login = async (req, res) => {
     if (!match) return res.status(401).json({ error: "Invalid password" });
 
     // Generate new tokens
-    const { accessToken, refreshToken } = generateTokens(user.id);
+    const { accessToken, refreshToken } = generateTokens(user);
     await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
       refreshToken,
       user.id,
@@ -77,6 +83,7 @@ const login = async (req, res) => {
         name: user.name,
         email: user.email,
         has_completed_assessment: user.has_completed_assessment,
+        is_admin: user.is_admin, // include admin flag
       },
     });
   } catch (err) {
@@ -98,20 +105,21 @@ const refresh = async (req, res) => {
     if (result.rows.length === 0)
       return res.status(403).json({ error: "Invalid refresh token" });
 
-    jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, (err, decoded) => {
+    const user = result.rows[0];
+
+    jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, (err) => {
       if (err)
         return res
           .status(403)
           .json({ error: "Expired or invalid refresh token" });
 
-      const { accessToken, refreshToken: newRefreshToken } = generateTokens(
-        decoded.userId
-      );
+      const { accessToken, refreshToken: newRefreshToken } =
+        generateTokens(user);
 
       // Save new refresh token (rotate it)
       pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
         newRefreshToken,
-        decoded.userId,
+        user.id,
       ]);
 
       res.json({ accessToken, refreshToken: newRefreshToken });
