@@ -60,16 +60,18 @@ router.post("/:type", async (req, res) => {
     try {
       await client.query("BEGIN");
 
-      // Upsert each answer into user_scores
+      // Upsert each answer into user_assessment_answers
       const upsertSql = `
-        INSERT INTO user_scores (user_id, assessment_type, category, question_id, question_text, score)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (user_id, assessment_type, question_id)
-        DO UPDATE SET
-          score = EXCLUDED.score,
-          question_text = EXCLUDED.question_text,
-          updated_at = now()
-      `;
+  INSERT INTO user_assessment_answers 
+    (user_id, assessment_type, category, question_id, question_text, score, is_followup)
+  VALUES ($1, $2, $3, $4, $5, $6, $7)
+  ON CONFLICT (user_id, assessment_type, question_id)
+  DO UPDATE SET
+    score = EXCLUDED.score,
+    question_text = EXCLUDED.question_text,
+    is_followup = EXCLUDED.is_followup,
+    updated_at = now()
+`;
 
       for (const a of answers) {
         await client.query(upsertSql, [
@@ -112,10 +114,10 @@ router.get("/:type/:userId", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT question_id, question_text, category, score, updated_at
-       FROM user_scores
-       WHERE user_id = $1 AND assessment_type = $2
-       ORDER BY category, question_id`,
+      `SELECT question_id, question_text, category, score, is_followup, updated_at
+   FROM user_assessment_answers
+   WHERE user_id = $1 AND assessment_type = $2
+   ORDER BY category, question_id`,
       [userId, type]
     );
 
