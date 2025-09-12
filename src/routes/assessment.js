@@ -157,4 +157,37 @@ router.get("/:type/:userId", async (req, res) => {
   }
 });
 
+// Wipe all assessments for a user
+router.delete("/all/:userId", async (req, res) => {
+  const { userId } = req.params;
+  try {
+    await pool.query(`DELETE FROM user_assessment_answers WHERE user_id = $1`, [
+      userId,
+    ]);
+    await pool.query(
+      `UPDATE users SET has_completed_assessment = false WHERE id = $1`,
+      [userId]
+    );
+    res.json({ success: true, message: "All assessments cleared" });
+  } catch (err) {
+    console.error("Wipe all assessments error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// Wipe a single assessment type
+router.delete("/:type/:userId", async (req, res) => {
+  const { type, userId } = req.params;
+  try {
+    await pool.query(
+      `DELETE FROM user_assessment_answers WHERE user_id = $1 AND assessment_type = $2`,
+      [userId, type]
+    );
+    res.json({ success: true, message: `${type} assessment cleared` });
+  } catch (err) {
+    console.error("Wipe assessment error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 module.exports = router;
