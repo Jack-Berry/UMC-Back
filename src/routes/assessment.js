@@ -113,13 +113,12 @@ router.post("/:type", async (req, res) => {
   }
 });
 
-// 🚨 IMPORTANT: put this BEFORE the :userId route
 router.get("/:type/questions", async (req, res) => {
   const { type } = req.params;
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, category, text, version, active
+      `SELECT id, category, text, version, active, parent_id
        FROM assessment_questions
        WHERE assessment_type = $1 AND active = true
        ORDER BY id`,
@@ -139,10 +138,6 @@ router.get("/:type/questions", async (req, res) => {
   }
 });
 
-/**
- * GET /api/assessment/:type/:userId
- * Returns current answers for a given assessment type
- */
 router.get("/:type/:userId", async (req, res) => {
   const { type, userId } = req.params;
 
