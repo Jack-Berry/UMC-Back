@@ -62,8 +62,15 @@ router.post("/:type", async (req, res) => {
 
       // Upsert each answer into user_assessment_answers
       const upsertSql = `
-  INSERT INTO user_assessment_answers 
-    (user_id, assessment_type, category, question_id, question_text, score, is_followup)
+  INSERT INTO user_assessment_answers (
+    user_id, 
+    assessment_type, 
+    category, 
+    question_id, 
+    question_text, 
+    score, 
+    is_followup
+  )
   VALUES ($1, $2, $3, $4, $5, $6, $7)
   ON CONFLICT (user_id, assessment_type, question_id)
   DO UPDATE SET
@@ -78,9 +85,10 @@ router.post("/:type", async (req, res) => {
           userId,
           assessmentType,
           a.category,
-          a.questionId, // now TEXT
+          a.questionId,
           a.questionText,
           a.score,
+          a.is_followup, // 👈 include this now
         ]);
       }
 
