@@ -136,4 +136,29 @@ router.get("/:type/:userId", async (req, res) => {
   }
 });
 
+router.get("/:type/questions", async (req, res) => {
+  const { type } = req.params;
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, category, text, version, active
+       FROM assessment_questions
+       WHERE assessment_type = $1 AND active = true
+       ORDER BY id`,
+      [type]
+    );
+
+    if (rows.length === 0) {
+      return res
+        .status(404)
+        .json({ error: `No questions found for type: ${type}` });
+    }
+
+    res.json({ assessmentType: type, questions: rows });
+  } catch (err) {
+    console.error("Fetch questions error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 module.exports = router;
