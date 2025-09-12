@@ -9,7 +9,7 @@ const { pool, checkConnection } = require("./src/db");
 const rateLimit = require("express-rate-limit");
 const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
-const adminAssessmentRouter = require(".src//routes/adminAssessment");
+const adminAssessmentRouter = require("./src/routes/adminAssessment");
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
