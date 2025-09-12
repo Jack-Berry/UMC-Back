@@ -113,29 +113,6 @@ router.post("/:type", async (req, res) => {
   }
 });
 
-/**
- * GET /api/assessment/:type/:userId
- * Returns current answers for a given assessment type
- */
-router.get("/:type/:userId", async (req, res) => {
-  const { type, userId } = req.params;
-
-  try {
-    const { rows } = await pool.query(
-      `SELECT question_id, question_text, category, score, is_followup, updated_at
-   FROM user_assessment_answers
-   WHERE user_id = $1 AND assessment_type = $2
-   ORDER BY category, question_id`,
-      [userId, type]
-    );
-
-    res.json({ assessmentType: type, userId: Number(userId), answers: rows });
-  } catch (err) {
-    console.error("Fetch assessment error:", err);
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
 router.get("/:type/questions", async (req, res) => {
   const { type } = req.params;
 
@@ -157,6 +134,29 @@ router.get("/:type/questions", async (req, res) => {
     res.json({ assessmentType: type, questions: rows });
   } catch (err) {
     console.error("Fetch questions error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+/**
+ * GET /api/assessment/:type/:userId
+ * Returns current answers for a given assessment type
+ */
+router.get("/:type/:userId", async (req, res) => {
+  const { type, userId } = req.params;
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT question_id, question_text, category, score, is_followup, updated_at
+   FROM user_assessment_answers
+   WHERE user_id = $1 AND assessment_type = $2
+   ORDER BY category, question_id`,
+      [userId, type]
+    );
+
+    res.json({ assessmentType: type, userId: Number(userId), answers: rows });
+  } catch (err) {
+    console.error("Fetch assessment error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
