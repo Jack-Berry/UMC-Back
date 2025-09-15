@@ -8,9 +8,8 @@ const { generateQuestionId } = require("../utils/generateQuestionId");
 
 // ---------- Categories ----------
 
-// GET distinct categories for a given assessment_type (or all)
 router.get("/categories", authenticateToken, requireAdmin, async (req, res) => {
-  const { type } = req.query; // optional ?type=initial
+  const { type } = req.query;
   try {
     const params = [];
     let where = "";
@@ -39,7 +38,6 @@ router.get("/categories", authenticateToken, requireAdmin, async (req, res) => {
 
 // ---------- Questions ----------
 
-// GET questions, optional filter by category or type
 router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   const { category, type } = req.query;
   const params = [];
@@ -94,7 +92,6 @@ router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const client = await pool.connect();
     try {
-      // Generate a clean ID
       const id = await generateQuestionId(client, assessment_type, parent_id);
 
       const { rows } = await client.query(
@@ -107,7 +104,7 @@ router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
         [
           id,
           assessment_type,
-          category || assessment_type, // fallback to type if no category
+          category || assessment_type,
           text,
           parent_id || null,
           version,
@@ -138,16 +135,16 @@ router.put(
     try {
       const { rows } = await pool.query(
         `
-        UPDATE assessment_questions
-        SET category   = COALESCE($1, category),
-            text       = COALESCE($2, text),
-            parent_id  = $3,
-            version    = COALESCE($4, version),
-            active     = COALESCE($5, active),
-            sort_order = COALESCE($6, sort_order)
-        WHERE id = $7
-        RETURNING *
-        `,
+      UPDATE assessment_questions
+      SET category   = COALESCE($1, category),
+          text       = COALESCE($2, text),
+          parent_id  = $3,
+          version    = COALESCE($4, version),
+          active     = COALESCE($5, active),
+          sort_order = COALESCE($6, sort_order)
+      WHERE id = $7
+      RETURNING *
+      `,
         [category, text, parent_id || null, version, active, sort_order, id]
       );
 
@@ -176,6 +173,45 @@ router.delete(
     } catch (err) {
       console.error("Error deleting question:", err);
       res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+// ---------- Bulk Save ----------
+
+router.patch(
+  "/questions/bulk",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const { questions } = req.body; // [{id, text, category, parent_id, sort_order}, ...]
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      for (const q of questions) {
+        await client.query(
+          `
+        UPDATE assessment_questions
+        SET text = $1,
+            category = $2,
+            parent_id = $3,
+            sort_order = $4
+        WHERE id = $5
+        `,
+          [q.text, q.category, q.parent_id || null, q.sort_order, q.id]
+        );
+      }
+
+      await client.query("COMMIT");
+      res.json({ success: true });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("Bulk update failed:", err);
+      res.status(500).json({ error: "Bulk update failed" });
+    } finally {
+      client.release();
     }
   }
 );
