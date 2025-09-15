@@ -169,7 +169,7 @@ router.delete(
     const { id } = req.params;
     try {
       await pool.query("DELETE FROM assessment_questions WHERE id = $1", [id]);
-      res.status(204).end();
+      res.json({ success: true, id }); // ✅ Always return JSON
     } catch (err) {
       console.error("Error deleting question:", err);
       res.status(500).json({ error: "Server error" });
