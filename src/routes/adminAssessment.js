@@ -62,7 +62,7 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
       SELECT id, assessment_type, category, text, parent_id, active, version, sort_order
       FROM assessment_questions
       ${whereClause}
-      ORDER BY category, parent_id NULLS FIRST, sort_order, id
+      ORDER BY category, parent_id NULLS FIRST, sort_order NULLS LAST, id
       `,
       params
     );
@@ -82,7 +82,7 @@ router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
     parent_id,
     version = 1,
     active = true,
-    sort_order = 0,
+    sort_order = null,
   } = req.body;
 
   if (!assessment_type || !text) {
@@ -144,8 +144,7 @@ router.put(
             parent_id  = $3,
             version    = COALESCE($4, version),
             active     = COALESCE($5, active),
-            sort_order = COALESCE($6, sort_order),
-            updated_at = NOW()
+            sort_order = COALESCE($6, sort_order)
         WHERE id = $7
         RETURNING *
         `,
