@@ -1,3 +1,4 @@
+// app.js
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -10,6 +11,11 @@ const rateLimit = require("express-rate-limit");
 const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
 const adminAssessmentRouter = require("./src/routes/adminAssessment");
+
+dotenv.config();
+
+const app = express();
+app.set("trust proxy", 1);
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -27,19 +33,21 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-dotenv.config();
+// ✅ Security
+app.use(helmet());
 
-const app = express();
-app.set("trust proxy", 1);
+// ✅ CORS must come before routes and rate limiters
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // handle preflight globally
 
 app.use(express.json());
 
-app.use(helmet());
-app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));
-
+// ✅ Now safe to apply rate limiting
 app.use("/api/", apiLimiter);
+
+// ---------- Routes ----------
 app.use("/api/users", userRoutes);
+
 app.use(
   "/api/admin/assessment",
   authenticateToken,
@@ -47,7 +55,10 @@ app.use(
   adminAssessmentRouter
 );
 
-// 🔹 Live DB status check
+app.use("/api/auth", authRoutes);
+app.use("/api/assessment", assessmentRoutes);
+
+// ---------- Status check ----------
 app.get("/api/status", async (req, res) => {
   const dbOk = await checkConnection();
 
@@ -60,7 +71,7 @@ app.get("/api/status", async (req, res) => {
   });
 });
 
-// 🔹 Example route with fallback
+// ---------- Demo fallback ----------
 app.get("/api/demo-assessment", async (req, res) => {
   const dbOk = await checkConnection();
 
@@ -83,10 +94,6 @@ app.get("/api/demo-assessment", async (req, res) => {
     res.status(500).json({ error: "Database error" });
   }
 });
-
-// Existing routes
-app.use("/api/auth", authRoutes);
-app.use("/api/assessment", assessmentRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
