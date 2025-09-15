@@ -36,13 +36,11 @@ const corsOptions = {
 // ✅ Security
 app.use(helmet());
 
-// ✅ CORS must come before routes and rate limiters
 app.use(cors(corsOptions));
-app.options("/*", cors(corsOptions));
+app.options(cors(corsOptions));
 
 app.use(express.json());
 
-// ✅ Now safe to apply rate limiting
 app.use("/api/", apiLimiter);
 
 // ---------- Routes ----------
