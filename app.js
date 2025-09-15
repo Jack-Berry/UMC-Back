@@ -38,7 +38,7 @@ app.use(helmet());
 
 // ✅ CORS must come before routes and rate limiters
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // handle preflight globally
+app.options("/*", cors(corsOptions));
 
 app.use(express.json());
 
