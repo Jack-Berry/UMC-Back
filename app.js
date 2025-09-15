@@ -7,7 +7,7 @@ const assessmentRoutes = require("./src/routes/assessment");
 const userRoutes = require("./src/routes/userRoutes");
 const { pool, checkConnection } = require("./src/db");
 const rateLimit = require("express-rate-limit");
-const authenticateToken = require("../middleware/authMiddleware");
+const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
 const adminAssessmentRouter = require("./src/routes/adminAssessment");
 
