@@ -36,7 +36,7 @@ app.use(express.json());
 
 app.use(helmet());
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 app.use("/api/", apiLimiter);
 app.use("/api/users", userRoutes);
