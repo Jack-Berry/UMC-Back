@@ -4,6 +4,7 @@ const router = express.Router();
 const { pool } = require("../db");
 const authenticateToken = require("../middleware/authMiddleware");
 const requireAdmin = require("../middleware/requireAdmin");
+const { generateQuestionId } = require("../utils/generateQuestionId");
 
 // ---------- Categories ----------
 
@@ -58,10 +59,10 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `
-      SELECT id, assessment_type, category, text, parent_id, active, version
+      SELECT id, assessment_type, category, text, parent_id, active, version, sort_order
       FROM assessment_questions
       ${whereClause}
-      ORDER BY category, parent_id NULLS FIRST, id
+      ORDER BY category, parent_id NULLS FIRST, sort_order, id
       `,
       params
     );
@@ -81,25 +82,44 @@ router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
     parent_id,
     version = 1,
     active = true,
+    sort_order = 0,
   } = req.body;
 
-  if (!assessment_type || !category || !text) {
+  if (!assessment_type || !text) {
     return res
       .status(400)
-      .json({ error: "assessment_type, category, and text are required" });
+      .json({ error: "assessment_type and text are required" });
   }
 
   try {
-    const { rows } = await pool.query(
-      `
-      INSERT INTO assessment_questions
-        (assessment_type, category, text, parent_id, version, active)
-      VALUES ($1,$2,$3,$4,$5,$6)
-      RETURNING *
-      `,
-      [assessment_type, category, text, parent_id || null, version, active]
-    );
-    res.status(201).json(rows[0]);
+    const client = await pool.connect();
+    try {
+      // Generate a clean ID
+      const id = await generateQuestionId(client, assessment_type, parent_id);
+
+      const { rows } = await client.query(
+        `
+        INSERT INTO assessment_questions
+          (id, assessment_type, category, text, parent_id, version, active, sort_order)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        RETURNING *
+        `,
+        [
+          id,
+          assessment_type,
+          category || assessment_type, // fallback to type if no category
+          text,
+          parent_id || null,
+          version,
+          active,
+          sort_order,
+        ]
+      );
+
+      res.status(201).json(rows[0]);
+    } finally {
+      client.release();
+    }
   } catch (err) {
     console.error("Error creating question:", err);
     res.status(500).json({ error: "Server error" });
@@ -113,25 +133,29 @@ router.put(
   requireAdmin,
   async (req, res) => {
     const { id } = req.params;
-    const { category, text, parent_id, version, active } = req.body;
+    const { category, text, parent_id, version, active, sort_order } = req.body;
 
     try {
       const { rows } = await pool.query(
         `
-      UPDATE assessment_questions
-      SET category = COALESCE($1, category),
-          text = COALESCE($2, text),
-          parent_id = $3,
-          version = COALESCE($4, version),
-          active = COALESCE($5, active),
-          updated_at = NOW()
-      WHERE id = $6
-      RETURNING *
-      `,
-        [category, text, parent_id || null, version, active, id]
+        UPDATE assessment_questions
+        SET category   = COALESCE($1, category),
+            text       = COALESCE($2, text),
+            parent_id  = $3,
+            version    = COALESCE($4, version),
+            active     = COALESCE($5, active),
+            sort_order = COALESCE($6, sort_order),
+            updated_at = NOW()
+        WHERE id = $7
+        RETURNING *
+        `,
+        [category, text, parent_id || null, version, active, sort_order, id]
       );
-      if (!rows[0])
+
+      if (!rows[0]) {
         return res.status(404).json({ error: "Question not found" });
+      }
+
       res.json(rows[0]);
     } catch (err) {
       console.error("Error updating question:", err);
