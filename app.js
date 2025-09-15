@@ -23,7 +23,7 @@ const corsOptions = {
     "https://uselessmen.org",
     "https://www.uselessmen.org",
   ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
@@ -36,6 +36,7 @@ app.use(express.json());
 
 app.use(helmet());
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 app.use("/api/", apiLimiter);
 app.use("/api/users", userRoutes);
