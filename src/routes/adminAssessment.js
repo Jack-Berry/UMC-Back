@@ -47,20 +47,20 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   const params = [];
   const where = [];
 
+  if (type) {
+    params.push(type);
+    where.push(`assessment_type = $${params.length}`);
+  }
+  if (category) {
+    params.push(category);
+    where.push(`category = $${params.length}`);
+  }
   if (parent_id) {
     params.push(parent_id);
     where.push(`parent_id = $${params.length}`);
   } else {
-    if (type) {
-      params.push(type);
-      where.push(`assessment_type = $${params.length}`);
-    }
-    if (category) {
-      params.push(category);
-      where.push(`category = $${params.length}`);
-    }
-    // ensure we only fetch parents if not filtering by parent_id
-    where.push("parent_id IS NULL");
+    // only fetch top-level if no parent_id
+    where.push(`parent_id IS NULL`);
   }
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
