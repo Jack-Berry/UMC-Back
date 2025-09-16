@@ -5,10 +5,14 @@ const { pool } = require("../db");
 const authenticateToken = require("../middleware/authMiddleware");
 const requireAdmin = require("../middleware/requireAdmin");
 const { generateQuestionId } = require("../utils/generateQuestionId");
-const assessmentData = require("../data/assessmentData");
+
+// ---- Load assessmentData safely (works for module.exports or export default) ----
+let assessmentData = require("../data/assessmentData");
+if (assessmentData.default) {
+  assessmentData = assessmentData.default;
+}
 
 // ---------- Categories ----------
-
 router.get("/categories", authenticateToken, requireAdmin, async (req, res) => {
   const { type } = req.query;
   try {
@@ -38,7 +42,6 @@ router.get("/categories", authenticateToken, requireAdmin, async (req, res) => {
 });
 
 // ---------- Questions ----------
-
 router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   const { category, type } = req.query;
   const params = [];
@@ -72,7 +75,7 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// CREATE question
+// ---------- CREATE ----------
 router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
   const {
     assessment_type,
@@ -124,7 +127,7 @@ router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// UPDATE question
+// ---------- UPDATE ----------
 router.put(
   "/questions/:id",
   authenticateToken,
@@ -161,7 +164,7 @@ router.put(
   }
 );
 
-// DELETE question
+// ---------- DELETE ----------
 router.delete(
   "/questions/:id",
   authenticateToken,
@@ -170,7 +173,7 @@ router.delete(
     const { id } = req.params;
     try {
       await pool.query("DELETE FROM assessment_questions WHERE id = $1", [id]);
-      res.json({ success: true, id }); // ✅ Always return JSON
+      res.json({ success: true, id });
     } catch (err) {
       console.error("Error deleting question:", err);
       res.status(500).json({ error: "Server error" });
@@ -178,78 +181,58 @@ router.delete(
   }
 );
 
-// Restore default schema
+// ---------- Restore Defaults ----------
 router.post("/restore-defaults", async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Wipe table
+    // wipe table
     await client.query("DELETE FROM assessment_questions");
 
-    // Restore default schema
-    router.post("/restore-defaults", async (req, res) => {
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
+    // helper: force "initial" type for any init-* id
+    const typeFor = (id, defaultType) =>
+      id.startsWith("init-") ? "initial" : defaultType;
 
-        // Wipe table
-        await client.query("DELETE FROM assessment_questions");
+    // reinsert defaults
+    for (const category of assessmentData) {
+      for (let i = 0; i < category.questions.length; i++) {
+        const q = category.questions[i];
 
-        // Helper: force 'initial' for any init-* id
-        const typeFor = (id, defaultType) =>
-          id.startsWith("init-") ? "initial" : defaultType;
-
-        // Reinsert defaults
-        for (const category of assessmentData) {
-          for (let i = 0; i < category.questions.length; i++) {
-            const q = category.questions[i];
-
-            await client.query(
-              `INSERT INTO assessment_questions
+        await client.query(
+          `INSERT INTO assessment_questions
             (id, assessment_type, category, text, parent_id, sort_order)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-              [
-                q.id,
-                typeFor(q.id, category.assessment_type), // ✅ 'initial' for init-*, else machine key
-                category.category,
-                q.text,
-                q.parent_id || null,
-                i,
-              ]
-            );
+          [
+            q.id,
+            typeFor(q.id, category.assessment_type),
+            category.category,
+            q.text,
+            q.parent_id || null,
+            i,
+          ]
+        );
 
-            if (q.followUps?.questions) {
-              for (let j = 0; j < q.followUps.questions.length; j++) {
-                const fq = q.followUps.questions[j];
-                await client.query(
-                  `INSERT INTO assessment_questions
+        if (q.followUps?.questions) {
+          for (let j = 0; j < q.followUps.questions.length; j++) {
+            const fq = q.followUps.questions[j];
+            await client.query(
+              `INSERT INTO assessment_questions
                 (id, assessment_type, category, text, parent_id, sort_order)
                VALUES ($1, $2, $3, $4, $5, $6)`,
-                  [
-                    fq.id,
-                    typeFor(fq.id, category.assessment_type), // ✅ machine key; 'initial' if ever needed
-                    category.category,
-                    fq.text,
-                    q.id,
-                    j,
-                  ]
-                );
-              }
-            }
+              [
+                fq.id,
+                typeFor(fq.id, category.assessment_type),
+                category.category,
+                fq.text,
+                q.id,
+                j,
+              ]
+            );
           }
         }
-
-        await client.query("COMMIT");
-        res.json({ success: true, restored: true });
-      } catch (err) {
-        await client.query("ROLLBACK");
-        console.error("Error restoring defaults:", err);
-        res.status(500).json({ error: "Failed to restore defaults" });
-      } finally {
-        client.release();
       }
-    });
+    }
 
     await client.query("COMMIT");
     res.json({ success: true, restored: true });
@@ -263,7 +246,6 @@ router.post("/restore-defaults", async (req, res) => {
 });
 
 // ---------- Bulk Save ----------
-
 router.patch(
   "/questions/bulk",
   authenticateToken,
