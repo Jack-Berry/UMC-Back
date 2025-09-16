@@ -82,6 +82,35 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// ---------- Single Question ----------
+router.get(
+  "/questions/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { rows } = await pool.query(
+        `
+        SELECT id, assessment_type, category, text, parent_id, active, version, sort_order
+        FROM assessment_questions
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (!rows[0]) {
+        return res.status(404).json({ error: "Question not found" });
+      }
+
+      res.json(rows[0]);
+    } catch (err) {
+      console.error("Error fetching single question:", err);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
 // ---------- CREATE ----------
 router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
   const {
