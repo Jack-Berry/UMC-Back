@@ -195,8 +195,8 @@ router.post("/restore-defaults", async (req, res) => {
           `INSERT INTO assessment_questions (id, assessment_type, category, text, parent_id, sort_order)
            VALUES ($1, $2, $3, $4, $5, $6)`,
           [
-            q.id, // keep stable ids
-            category.category,
+            q.id,
+            category.assessment_type,
             category.category,
             q.text,
             q.parent_id || null,
