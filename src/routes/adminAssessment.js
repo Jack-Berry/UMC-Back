@@ -5,6 +5,7 @@ const { pool } = require("../db");
 const authenticateToken = require("../middleware/authMiddleware");
 const requireAdmin = require("../middleware/requireAdmin");
 const { generateQuestionId } = require("../utils/generateQuestionId");
+const assessmentData = require("../data/assessmentData");
 
 // ---------- Categories ----------
 
@@ -176,6 +177,57 @@ router.delete(
     }
   }
 );
+
+// Restore default schema
+router.post("/restore-defaults", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Wipe table
+    await client.query("DELETE FROM assessment_questions");
+
+    // Reinsert defaults
+    for (const category of assessmentData) {
+      for (let i = 0; i < category.questions.length; i++) {
+        const q = category.questions[i];
+        await client.query(
+          `INSERT INTO assessment_questions (id, assessment_type, category, text, parent_id, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            q.id, // keep stable ids
+            category.category,
+            category.category,
+            q.text,
+            q.parent_id || null,
+            i,
+          ]
+        );
+
+        // If follow-ups exist
+        if (q.followUps?.questions) {
+          for (let j = 0; j < q.followUps.questions.length; j++) {
+            const fq = q.followUps.questions[j];
+            await client.query(
+              `INSERT INTO assessment_questions (id, assessment_type, category, text, parent_id, sort_order)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [fq.id, category.category, category.category, fq.text, q.id, j]
+            );
+          }
+        }
+      }
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true, restored: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error restoring defaults:", err);
+    res.status(500).json({ error: "Failed to restore defaults" });
+  } finally {
+    client.release();
+  }
+});
 
 // ---------- Bulk Save ----------
 
