@@ -360,4 +360,31 @@ router.delete(
   }
 );
 
+// ---------- Update Category Name ----------
+router.patch(
+  "/update-category",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const { oldCategory, newCategory } = req.body;
+    if (!oldCategory || !newCategory) {
+      return res
+        .status(400)
+        .json({ error: "Both oldCategory and newCategory required" });
+    }
+    try {
+      const { rowCount } = await pool.query(
+        `UPDATE assessment_questions
+         SET category = $1
+         WHERE category = $2 AND assessment_type = 'initial'`,
+        [newCategory, oldCategory]
+      );
+      res.json({ success: true, updated: rowCount });
+    } catch (err) {
+      console.error("Error updating category:", err);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
 module.exports = router;
