@@ -187,36 +187,69 @@ router.post("/restore-defaults", async (req, res) => {
     // Wipe table
     await client.query("DELETE FROM assessment_questions");
 
-    // Reinsert defaults
-    for (const category of assessmentData) {
-      for (let i = 0; i < category.questions.length; i++) {
-        const q = category.questions[i];
-        await client.query(
-          `INSERT INTO assessment_questions (id, assessment_type, category, text, parent_id, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            q.id,
-            category.assessment_type,
-            category.category,
-            q.text,
-            q.parent_id || null,
-            i,
-          ]
-        );
+    // Restore default schema
+    router.post("/restore-defaults", async (req, res) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
 
-        // If follow-ups exist
-        if (q.followUps?.questions) {
-          for (let j = 0; j < q.followUps.questions.length; j++) {
-            const fq = q.followUps.questions[j];
+        // Wipe table
+        await client.query("DELETE FROM assessment_questions");
+
+        // Helper: force 'initial' for any init-* id
+        const typeFor = (id, defaultType) =>
+          id.startsWith("init-") ? "initial" : defaultType;
+
+        // Reinsert defaults
+        for (const category of assessmentData) {
+          for (let i = 0; i < category.questions.length; i++) {
+            const q = category.questions[i];
+
             await client.query(
-              `INSERT INTO assessment_questions (id, assessment_type, category, text, parent_id, sort_order)
-               VALUES ($1, $2, $3, $4, $5, $6)`,
-              [fq.id, category.category, category.category, fq.text, q.id, j]
+              `INSERT INTO assessment_questions
+            (id, assessment_type, category, text, parent_id, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+              [
+                q.id,
+                typeFor(q.id, category.assessment_type), // ✅ 'initial' for init-*, else machine key
+                category.category,
+                q.text,
+                q.parent_id || null,
+                i,
+              ]
             );
+
+            if (q.followUps?.questions) {
+              for (let j = 0; j < q.followUps.questions.length; j++) {
+                const fq = q.followUps.questions[j];
+                await client.query(
+                  `INSERT INTO assessment_questions
+                (id, assessment_type, category, text, parent_id, sort_order)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+                  [
+                    fq.id,
+                    typeFor(fq.id, category.assessment_type), // ✅ machine key; 'initial' if ever needed
+                    category.category,
+                    fq.text,
+                    q.id,
+                    j,
+                  ]
+                );
+              }
+            }
           }
         }
+
+        await client.query("COMMIT");
+        res.json({ success: true, restored: true });
+      } catch (err) {
+        await client.query("ROLLBACK");
+        console.error("Error restoring defaults:", err);
+        res.status(500).json({ error: "Failed to restore defaults" });
+      } finally {
+        client.release();
       }
-    }
+    });
 
     await client.query("COMMIT");
     res.json({ success: true, restored: true });
