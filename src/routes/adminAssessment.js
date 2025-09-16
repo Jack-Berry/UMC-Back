@@ -6,7 +6,7 @@ const authenticateToken = require("../middleware/authMiddleware");
 const requireAdmin = require("../middleware/requireAdmin");
 const { generateQuestionId } = require("../utils/generateQuestionId");
 
-// ---- Load assessmentData safely (works for module.exports or export default) ----
+// ---- Load assessmentData safely ----
 let assessmentData = require("../data/assessmentData");
 if (assessmentData.default) {
   assessmentData = assessmentData.default;
@@ -43,17 +43,24 @@ router.get("/categories", authenticateToken, requireAdmin, async (req, res) => {
 
 // ---------- Questions ----------
 router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
-  const { category, type } = req.query;
+  const { category, type, parent_id } = req.query;
   const params = [];
   const where = [];
 
-  if (type) {
-    params.push(type);
-    where.push(`assessment_type = $${params.length}`);
-  }
-  if (category) {
-    params.push(category);
-    where.push(`category = $${params.length}`);
+  if (parent_id) {
+    params.push(parent_id);
+    where.push(`parent_id = $${params.length}`);
+  } else {
+    if (type) {
+      params.push(type);
+      where.push(`assessment_type = $${params.length}`);
+    }
+    if (category) {
+      params.push(category);
+      where.push(`category = $${params.length}`);
+    }
+    // ensure we only fetch parents if not filtering by parent_id
+    where.push("parent_id IS NULL");
   }
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -64,7 +71,7 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
       SELECT id, assessment_type, category, text, parent_id, active, version, sort_order
       FROM assessment_questions
       ${whereClause}
-      ORDER BY category, parent_id NULLS FIRST, sort_order NULLS LAST, id
+      ORDER BY sort_order NULLS LAST, id
       `,
       params
     );
@@ -164,7 +171,7 @@ router.put(
   }
 );
 
-// DELETE question + cascade children
+// ---------- DELETE + cascade children ----------
 router.delete(
   "/questions/:id",
   authenticateToken,
@@ -173,19 +180,14 @@ router.delete(
     const { id } = req.params;
     try {
       await pool.query("BEGIN");
-
-      // delete children first
       await pool.query(
         "DELETE FROM assessment_questions WHERE parent_id = $1",
         [id]
       );
-
-      // then delete parent
       const { rowCount } = await pool.query(
         "DELETE FROM assessment_questions WHERE id = $1",
         [id]
       );
-
       await pool.query("COMMIT");
 
       if (!rowCount) {
@@ -206,15 +208,11 @@ router.post("/restore-defaults", async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
-    // wipe table
     await client.query("DELETE FROM assessment_questions");
 
-    // helper: force "initial" type for any init-* id
     const typeFor = (id, defaultType) =>
       id.startsWith("init-") ? "initial" : defaultType;
 
-    // reinsert defaults
     for (const category of assessmentData) {
       for (let i = 0; i < category.questions.length; i++) {
         const q = category.questions[i];
@@ -271,8 +269,7 @@ router.patch(
   authenticateToken,
   requireAdmin,
   async (req, res) => {
-    const { questions } = req.body; // [{id, text, category, parent_id, sort_order}, ...]
-
+    const { questions } = req.body;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
