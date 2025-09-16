@@ -26,10 +26,11 @@ router.get("/categories", authenticateToken, requireAdmin, async (req, res) => {
 
     const { rows } = await pool.query(
       `
-      SELECT DISTINCT assessment_type, category
+      SELECT assessment_type, MIN(category) AS category
       FROM assessment_questions
       ${where}
-      ORDER BY assessment_type, category
+      GROUP BY assessment_type
+      ORDER BY assessment_type
       `,
       params
     );
