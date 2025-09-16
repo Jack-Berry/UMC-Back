@@ -164,7 +164,7 @@ router.put(
   }
 );
 
-// ---------- DELETE ----------
+// DELETE question + cascade children
 router.delete(
   "/questions/:id",
   authenticateToken,
@@ -172,9 +172,29 @@ router.delete(
   async (req, res) => {
     const { id } = req.params;
     try {
-      await pool.query("DELETE FROM assessment_questions WHERE id = $1", [id]);
+      await pool.query("BEGIN");
+
+      // delete children first
+      await pool.query(
+        "DELETE FROM assessment_questions WHERE parent_id = $1",
+        [id]
+      );
+
+      // then delete parent
+      const { rowCount } = await pool.query(
+        "DELETE FROM assessment_questions WHERE id = $1",
+        [id]
+      );
+
+      await pool.query("COMMIT");
+
+      if (!rowCount) {
+        return res.status(404).json({ error: "Question not found" });
+      }
+
       res.json({ success: true, id });
     } catch (err) {
+      await pool.query("ROLLBACK");
       console.error("Error deleting question:", err);
       res.status(500).json({ error: "Server error" });
     }
