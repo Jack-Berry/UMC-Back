@@ -60,7 +60,6 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
     params.push(parent_id);
     where.push(`parent_id = $${params.length}`);
   } else {
-    // only fetch top-level if no parent_id
     where.push(`parent_id IS NULL`);
   }
 
@@ -326,6 +325,37 @@ router.patch(
       res.status(500).json({ error: "Bulk update failed" });
     } finally {
       client.release();
+    }
+  }
+);
+
+// ---------- Delete an entire assessment type ----------
+router.delete(
+  "/delete-type/:type",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const { type } = req.params;
+
+    // optional safeguard: block deleting "initial"
+    if (type === "initial") {
+      return res
+        .status(400)
+        .json({ error: "Cannot delete initial assessment" });
+    }
+
+    try {
+      const { rowCount } = await pool.query(
+        "DELETE FROM assessment_questions WHERE assessment_type = $1",
+        [type]
+      );
+      if (!rowCount) {
+        return res.status(404).json({ error: "Assessment not found" });
+      }
+      res.json({ success: true, deleted: rowCount });
+    } catch (err) {
+      console.error("Error deleting assessment type:", err);
+      res.status(500).json({ error: "Server error" });
     }
   }
 );
