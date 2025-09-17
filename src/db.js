@@ -14,9 +14,7 @@ const pool = new Pool({
   password: process.env.PGPASSWORD || null,
   database: process.env.PGDATABASE,
   port: Number(process.env.PGPORT) || 5432,
-  ssl: process.env.PGHOST.includes("render.com")
-    ? { rejectUnauthorized: false }
-    : false, // 🚨 disable SSL for local Gandi DB
+  ssl: false,
 });
 
 async function checkConnection() {
