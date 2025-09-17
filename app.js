@@ -43,7 +43,7 @@ app.use(express.json());
 
 app.use("/api/", apiLimiter);
 
-// ---------- Routes ----------
+// ---------- Routes ---------
 app.use("/api/users", userRoutes);
 
 app.use(
