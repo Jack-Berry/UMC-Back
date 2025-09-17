@@ -1,18 +1,18 @@
 const { Pool } = require("pg");
 require("dotenv").config();
 
-// const pool = new Pool({
-//   host: process.env.DB_HOST,
-//   port: process.env.DB_PORT,
-//   user: process.env.DB_USER,
-//   password: process.env.DB_PASSWORD,
-//   database: process.env.DB_NAME,
-// });
+console.log("🔍 DB Config (sanitized):", {
+  host: process.env.PGHOST,
+  user: process.env.PGUSER,
+  database: process.env.PGDATABASE,
+  port: process.env.PGPORT,
+  // don’t log password for security
+});
 
 const pool = new Pool({
   host: process.env.PGHOST,
   user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
+  password: process.env.PGPASSWORD || null, // handles <none> case
   database: process.env.PGDATABASE,
   port: Number(process.env.PGPORT) || 5432,
   ssl: { rejectUnauthorized: false },
@@ -25,7 +25,8 @@ async function checkConnection() {
     client.release();
     return true;
   } catch (err) {
-    console.error("DB connection error:", err.message);
+    console.error("❌ DB connection error:", err.message);
+    console.error("Full error:", err); // dump full object once
     return false;
   }
 }
