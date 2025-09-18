@@ -19,8 +19,9 @@ const app = express();
 app.set("trust proxy", 1);
 
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 500, // allow 500 requests per minute
+  message: "Too many requests, please try again later.",
 });
 
 const corsOptions = {
