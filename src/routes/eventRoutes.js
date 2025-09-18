@@ -14,5 +14,10 @@ router.post(
   eventController.registerInterest
 );
 router.get("/user/:id", authenticateToken, eventController.getUserEvents);
+router.delete(
+  "/:id/unregister",
+  authenticateToken,
+  eventController.unregisterInterest
+);
 
 module.exports = router;

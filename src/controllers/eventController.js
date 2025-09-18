@@ -3,16 +3,24 @@ const { pool } = require("../db");
 // Get all events
 exports.getEvents = async (req, res) => {
   try {
+    const userId = req.user ? req.user.id : null; // logged-in user if available
+
     const result = await pool.query(
-      `SELECT e.id, e.title, e.description, e.location, e.start_at, e.end_at,
-              u.name AS creator_name
-       FROM events e
-       LEFT JOIN users u ON e.created_by = u.id
-       ORDER BY e.start_at ASC`
+      `
+      SELECT e.*,
+             u.name AS creator_name,
+             CASE WHEN r.user_id IS NOT NULL THEN true ELSE false END AS is_registered
+      FROM events e
+      LEFT JOIN users u ON e.created_by = u.id
+      LEFT JOIN event_registrations r ON e.id = r.event_id AND r.user_id = $1
+      ORDER BY start_at ASC
+      `,
+      [userId]
     );
+
     res.json(result.rows);
   } catch (err) {
-    console.error("DB error in getEvents:", err.message);
+    console.error(err);
     res.status(500).json({ error: "Failed to fetch events" });
   }
 };
@@ -52,6 +60,22 @@ exports.registerInterest = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to register interest" });
+  }
+};
+
+// Unregister interest
+exports.unregisterInterest = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query(
+      `DELETE FROM event_registrations 
+       WHERE event_id = $1 AND user_id = $2`,
+      [id, req.user.id]
+    );
+    res.json({ message: "Unregistered successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to unregister" });
   }
 };
 
