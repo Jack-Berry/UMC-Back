@@ -4,15 +4,20 @@ const { pool } = require("../db");
 
 // Helper to generate tokens
 function generateTokens(user) {
-  const accessPayload = { userId: user.id, is_admin: user.is_admin };
-  const accessToken = jwt.sign(accessPayload, process.env.JWT_SECRET, {
+  const payload = {
+    id: user.id, // ✅ use "id", not "userId"
+    is_admin: user.is_admin,
+    email: user.email, // optional, but nice to have
+  };
+
+  const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: "1h",
   });
-  const refreshToken = jwt.sign(
-    { userId: user.id },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }
-  );
+
+  const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
+    expiresIn: "7d",
+  });
+
   return { accessToken, refreshToken };
 }
 
