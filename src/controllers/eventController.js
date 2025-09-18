@@ -1,4 +1,4 @@
-const pool = require("../db");
+const { pool } = require("../db");
 
 // Get all events
 exports.getEvents = async (req, res) => {
