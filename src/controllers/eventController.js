@@ -50,15 +50,22 @@ exports.createEvent = async (req, res) => {
 exports.registerInterest = async (req, res) => {
   const { id } = req.params;
   try {
-    await pool.query(
-      `INSERT INTO event_registrations (event_id, user_id)
-       VALUES ($1, $2)
-       ON CONFLICT (event_id, user_id) DO NOTHING`,
+    const result = await pool.query(
+      `INSERT INTO event_registrations (event_id, user_id, registered_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (event_id, user_id) DO NOTHING
+       RETURNING *`,
       [id, req.user.id]
     );
-    res.json({ message: "Registered interest" });
+
+    if (result.rowCount === 0) {
+      // Already registered
+      return res.json({ message: "Already registered", already: true });
+    }
+
+    res.json({ message: "Registered interest", registration: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("Register interest error:", err);
     res.status(500).json({ error: "Failed to register interest" });
   }
 };
@@ -67,14 +74,21 @@ exports.registerInterest = async (req, res) => {
 exports.unregisterInterest = async (req, res) => {
   const { id } = req.params;
   try {
-    await pool.query(
-      `DELETE FROM event_registrations 
-       WHERE event_id = $1 AND user_id = $2`,
+    const result = await pool.query(
+      `DELETE FROM event_registrations
+       WHERE event_id = $1 AND user_id = $2
+       RETURNING *`,
       [id, req.user.id]
     );
-    res.json({ message: "Unregistered successfully" });
+
+    if (result.rowCount === 0) {
+      // Wasn’t registered
+      return res.status(404).json({ message: "No registration found" });
+    }
+
+    res.json({ message: "Unregistered successfully", removed: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("Unregister interest error:", err);
     res.status(500).json({ error: "Failed to unregister" });
   }
 };
