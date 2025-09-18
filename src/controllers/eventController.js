@@ -27,7 +27,15 @@ exports.getEvents = async (req, res) => {
 
 // Create event
 exports.createEvent = async (req, res) => {
-  const { title, description, location, start_at, end_at } = req.body;
+  const {
+    title,
+    description,
+    location,
+    latitude,
+    longitude,
+    start_at,
+    end_at,
+  } = req.body;
 
   if (!title || !description || !location || !start_at) {
     return res.status(400).json({ error: "Missing required fields" });
@@ -35,13 +43,24 @@ exports.createEvent = async (req, res) => {
 
   try {
     const result = await pool.query(
-      `INSERT INTO events (title, description, location, start_at, end_at, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [title, description, location, start_at, end_at || null, req.user.id]
+      `INSERT INTO events (title, description, location, latitude, longitude, start_at, end_at, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        title,
+        description,
+        location,
+        latitude || null,
+        longitude || null,
+        start_at,
+        end_at || null,
+        req.user.id,
+      ]
     );
+
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Create event error:", err);
     res.status(500).json({ error: "Failed to create event" });
   }
 };
