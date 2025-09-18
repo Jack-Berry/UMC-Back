@@ -4,14 +4,15 @@ const pool = require("../db");
 exports.getEvents = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT e.*, u.name AS creator_name
+      `SELECT e.id, e.title, e.description, e.location, e.start_at, e.end_at,
+              u.name AS creator_name
        FROM events e
        LEFT JOIN users u ON e.created_by = u.id
-       ORDER BY start_at ASC`
+       ORDER BY e.start_at ASC`
     );
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("DB error in getEvents:", err.message);
     res.status(500).json({ error: "Failed to fetch events" });
   }
 };
