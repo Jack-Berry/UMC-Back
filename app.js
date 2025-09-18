@@ -11,6 +11,7 @@ const rateLimit = require("express-rate-limit");
 const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
 const adminAssessmentRouter = require("./src/routes/adminAssessment");
+const eventRoutes = require("./src/routes/eventRoutes");
 
 dotenv.config();
 
@@ -45,16 +46,15 @@ app.use("/api/", apiLimiter);
 
 // ---------- Routes ---------
 app.use("/api/users", userRoutes);
-
 app.use(
   "/api/admin/assessment",
   authenticateToken,
   requireAdmin,
   adminAssessmentRouter
 );
-
 app.use("/api/auth", authRoutes);
 app.use("/api/assessment", assessmentRoutes);
+app.use("/api/events", eventRoutes);
 
 // ---------- Status check ----------
 app.get("/api/status", async (req, res) => {
