@@ -32,22 +32,31 @@ const apiLimiter = rateLimit({
 });
 
 // ✅ Security + CORS
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://uselessmen.org",
+  "https://www.uselessmen.org",
+];
+
 const corsOptions = {
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://uselessmen.org",
-    "https://www.uselessmen.org",
-  ],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, origin);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 };
 
 // ⬇️ IMPORTANT: configure Helmet so images can be embedded cross-origin
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
-    crossOriginEmbedderPolicy: false, // not needed for images, but keep off to avoid stricter COEP
+    crossOriginEmbedderPolicy: false,
   })
 );
 
@@ -62,13 +71,16 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(
   "/uploads",
   (req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*"); // or restrict to your domains
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
     res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
       "Content-Type, Authorization"
     );
-    // override any global CORP to allow embedding from uselessmen.org
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
   },
