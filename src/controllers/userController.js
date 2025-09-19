@@ -34,7 +34,7 @@ exports.uploadAvatar = async (req, res) => {
     const baseUrl = process.env.BASE_URL || "https://api.uselessmen.org";
     const publicUrl = `${baseUrl}${relativePath}`;
 
-    // Remove old avatar if exists
+    // Remove old avatar if exists (but only if it's different from new one)
     const existing = await pool.query(
       "SELECT avatar_url FROM users WHERE id = $1",
       [userId]
@@ -43,8 +43,10 @@ exports.uploadAvatar = async (req, res) => {
     if (existing.rows.length > 0 && existing.rows[0].avatar_url) {
       const oldRelPath = existing.rows[0].avatar_url;
 
-      // Only delete if it's a relative path (avoid nuking absolute URLs accidentally)
-      if (oldRelPath.startsWith("/uploads/")) {
+      if (
+        oldRelPath.startsWith("/uploads/") &&
+        oldRelPath !== relativePath // ✅ don’t delete the one we just uploaded
+      ) {
         const oldAbsPath = path.join(__dirname, "../../", oldRelPath);
         if (fs.existsSync(oldAbsPath)) {
           fs.unlinkSync(oldAbsPath);
