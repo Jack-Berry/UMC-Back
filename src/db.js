@@ -1,5 +1,7 @@
-const { Pool } = require("pg");
+const { Pool, types } = require("pg");
 require("dotenv").config();
+
+types.setTypeParser(20, (val) => parseInt(val, 10));
 
 console.log("🔍 DB Config (sanitized):", {
   host: process.env.PGHOST,
