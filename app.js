@@ -22,13 +22,6 @@ dotenv.config();
 const app = express();
 app.set("trust proxy", 1);
 
-// ✅ Rate limiter
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 500,
-  message: "Too many requests, please try again later.",
-});
-
 // ✅ Allowed origins
 const allowedOrigins = [
   "http://localhost:5173",
@@ -37,20 +30,20 @@ const allowedOrigins = [
   "https://www.uselessmen.org",
 ];
 
-// ✅ Global CORS middleware (handles preflight)
+// ✅ Global CORS middleware — must run FIRST
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
   if (origin && allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Origin", origin);
   }
-
-  res.header(
+  // Always set credentials header
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader(
     "Access-Control-Allow-Methods",
     "GET,POST,PUT,PATCH,DELETE,OPTIONS"
   );
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
@@ -67,6 +60,13 @@ app.use(
   })
 );
 
+// ✅ Rate limiter
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 500,
+  message: "Too many requests, please try again later.",
+});
+
 // ✅ Body parsing
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
@@ -76,10 +76,10 @@ app.use(
   "/uploads",
   (req, res, next) => {
     const origin = req.headers.origin;
-    if (!origin || allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin || "*");
-      res.setHeader("Access-Control-Allow-Credentials", "true");
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
     }
+    res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
@@ -157,21 +157,6 @@ app.get("/api/demo-assessment", async (req, res) => {
     console.error("DB query error:", err.message);
     res.status(500).json({ error: "Database error" });
   }
-});
-
-// ✅ Enforcer: make sure *all* responses include CORS headers
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-  }
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-  );
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  next();
 });
 
 const PORT = process.env.PORT || 5000;
