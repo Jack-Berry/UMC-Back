@@ -29,7 +29,10 @@ exports.uploadAvatar = async (req, res) => {
   }
 
   try {
-    const avatarPath = `/uploads/avatars/${req.file.filename}`;
+    // Always save relative path in DB
+    const relativePath = `/uploads/avatars/${req.file.filename}`;
+    const baseUrl = process.env.BASE_URL || "https://api.uselessmen.org";
+    const publicUrl = `${baseUrl}${relativePath}`;
 
     // Remove old avatar if exists
     const existing = await pool.query(
@@ -38,26 +41,32 @@ exports.uploadAvatar = async (req, res) => {
     );
 
     if (existing.rows.length > 0 && existing.rows[0].avatar_url) {
-      const oldPath = path.join(
-        __dirname,
-        "../../",
-        existing.rows[0].avatar_url
-      );
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
+      const oldRelPath = existing.rows[0].avatar_url;
+
+      // Only delete if it's a relative path (avoid nuking absolute URLs accidentally)
+      if (oldRelPath.startsWith("/uploads/")) {
+        const oldAbsPath = path.join(__dirname, "../../", oldRelPath);
+        if (fs.existsSync(oldAbsPath)) {
+          fs.unlinkSync(oldAbsPath);
+        }
       }
     }
 
+    // Save relative path in DB
     const result = await pool.query(
       "UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, avatar_url",
-      [avatarPath, userId]
+      [relativePath, userId]
     );
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json({ message: "Avatar updated", user: result.rows[0] });
+    // Return full URL to frontend
+    res.json({
+      message: "Avatar updated",
+      user: { ...result.rows[0], avatar_url: publicUrl },
+    });
   } catch (err) {
     console.error("Error uploading avatar:", err);
     res.status(500).json({ error: "Server error" });
