@@ -1,17 +1,56 @@
+const fs = require("fs");
+const path = require("path");
 const { pool } = require("../db");
 
-exports.updateAvatar = async (req, res) => {
-  const userId = req.params.id;
-  const { avatarUrl } = req.body;
+// Multer setup (middleware)
+const multer = require("multer");
+const uploadDir = path.join(__dirname, "../../uploads/avatars");
 
-  if (!avatarUrl) {
-    return res.status(400).json({ error: "avatarUrl required" });
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${req.params.id}-avatar${ext}`);
+  },
+});
+
+exports.upload = multer({ storage }).single("avatar");
+
+// 🔹 Handle avatar upload + DB update
+exports.uploadAvatar = async (req, res) => {
+  const userId = req.params.id;
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
   }
 
   try {
+    const avatarPath = `/uploads/avatars/${req.file.filename}`;
+
+    // Remove old avatar if exists
+    const existing = await pool.query(
+      "SELECT avatar_url FROM users WHERE id = $1",
+      [userId]
+    );
+
+    if (existing.rows.length > 0 && existing.rows[0].avatar_url) {
+      const oldPath = path.join(
+        __dirname,
+        "../../",
+        existing.rows[0].avatar_url
+      );
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
     const result = await pool.query(
       "UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, avatar_url",
-      [avatarUrl, userId]
+      [avatarPath, userId]
     );
 
     if (result.rowCount === 0) {
@@ -20,11 +59,12 @@ exports.updateAvatar = async (req, res) => {
 
     res.json({ message: "Avatar updated", user: result.rows[0] });
   } catch (err) {
-    console.error("Error updating avatar:", err);
+    console.error("Error uploading avatar:", err);
     res.status(500).json({ error: "Server error" });
   }
 };
 
+// 🔹 Update profile fields
 exports.updateProfile = async (req, res) => {
   const userId = req.params.id;
   const {
@@ -50,8 +90,9 @@ exports.updateProfile = async (req, res) => {
            show_location = COALESCE($7, show_location),
            region        = COALESCE($8, region)
        WHERE id = $9
-       RETURNING id, name, email, avatar_url, useful_at, useless_at, 
-                 location, region, lat, lng, show_location, created_at, has_completed_assessment`,
+       RETURNING id, name, email, avatar_url, useful_at, useless_at,
+                 location, region, lat, lng, show_location,
+                 created_at, has_completed_assessment`,
       [
         name ?? null,
         useful_at ?? null,
