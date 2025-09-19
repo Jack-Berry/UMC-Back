@@ -169,9 +169,9 @@ exports.deleteNews = async (req, res) => {
 
 // Upload image (handled by multer)
 exports.uploadNewsImage = async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded" });
-  }
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  console.log("📸 Uploaded file:", req.file); // 👈 debug log
 
   const imageUrl = `${req.protocol}://${req.get("host")}/uploads/news/${
     req.file.filename

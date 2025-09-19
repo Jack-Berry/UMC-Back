@@ -1,4 +1,3 @@
-// app.js
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -48,16 +47,21 @@ app.use(helmet());
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
-// ✅ Static uploads (make /uploads available publicly)
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
 // ✅ Body parsing with size limits
-// (⚡ Placed *after* uploads so multer can handle files first)
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ limit: "10mb", extended: true }));
+// Skip JSON parsing for multipart/form-data (uploads)
+app.use((req, res, next) => {
+  if (req.is("multipart/form-data")) return next();
+  express.json({ limit: "10mb" })(req, res, (err) => {
+    if (err) return res.status(400).json({ error: "Invalid JSON" });
+    express.urlencoded({ limit: "10mb", extended: true })(req, res, next);
+  });
+});
 
 // ✅ Apply limiter to all API routes
 app.use("/api/", apiLimiter);
+
+// ✅ Static uploads
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ---------- Routes ----------
 app.use("/api/auth", authRoutes);
