@@ -169,12 +169,35 @@ exports.deleteNews = async (req, res) => {
 
 // Upload image (handled by multer)
 exports.uploadNewsImage = async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  try {
+    console.log("📥 Incoming upload request");
+    console.log("Headers:", req.headers["content-type"]);
 
-  console.log("📸 Uploaded file:", req.file); // 👈 debug log
+    if (!req.file) {
+      console.error("❌ No file received");
+      return res.status(400).json({ error: "No file uploaded" });
+    }
 
-  const imageUrl = `${req.protocol}://${req.get("host")}/uploads/news/${
-    req.file.filename
-  }`;
-  res.json({ image_url: imageUrl });
+    console.log("✅ Multer received file:", {
+      fieldname: req.file.fieldname,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path,
+    });
+
+    const imageUrl = `${req.protocol}://${req.get("host")}/uploads/news/${
+      req.file.filename
+    }`;
+
+    res.json({ image_url: imageUrl });
+  } catch (err) {
+    console.error("❌ Upload handler error:", err);
+    res
+      .status(500)
+      .json({
+        error: "Server failed to process image upload",
+        details: err.message,
+      });
+  }
 };

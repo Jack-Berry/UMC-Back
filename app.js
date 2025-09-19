@@ -47,21 +47,30 @@ app.use(helmet());
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
-// ✅ Body parsing with size limits
-// Skip JSON parsing for multipart/form-data (uploads)
-app.use((req, res, next) => {
-  if (req.is("multipart/form-data")) return next();
-  express.json({ limit: "10mb" })(req, res, (err) => {
-    if (err) return res.status(400).json({ error: "Invalid JSON" });
-    express.urlencoded({ limit: "10mb", extended: true })(req, res, next);
-  });
-});
+// ✅ Static uploads
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ✅ Apply limiter to all API routes
 app.use("/api/", apiLimiter);
 
-// ✅ Static uploads
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// ⚠️ Important: put admin/news upload route BEFORE JSON parsers
+app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
+
+// Debug incoming requests
+app.use((req, res, next) => {
+  console.log(
+    "➡️",
+    req.method,
+    req.url,
+    "Content-Type:",
+    req.headers["content-type"]
+  );
+  next();
+});
+
+// ✅ JSON parsing (after multer routes)
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 // ---------- Routes ----------
 app.use("/api/auth", authRoutes);
@@ -76,8 +85,6 @@ app.use(
   requireAdmin,
   adminAssessmentRouter
 );
-
-app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
 
 // ---------- Status check ----------
 app.get("/api/status", async (req, res) => {
