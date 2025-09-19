@@ -1,15 +1,15 @@
 const fs = require("fs");
 const path = require("path");
 const { pool } = require("../db");
-
-// Multer setup (middleware)
 const multer = require("multer");
-const uploadDir = path.join(__dirname, "../uploads/avatars");
 
+// 🔹 Upload directory (inside /uploads/avatars)
+const uploadDir = path.join(__dirname, "../uploads/avatars");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// 🔹 Multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -29,7 +29,7 @@ exports.uploadAvatar = async (req, res) => {
   }
 
   try {
-    // Build public URL (same approach as news images)
+    // Build public URL (same pattern as news.image_url)
     const avatarUrl = `${req.protocol}://${req.get("host")}/uploads/avatars/${
       req.file.filename
     }`;
@@ -53,7 +53,7 @@ exports.uploadAvatar = async (req, res) => {
       }
     }
 
-    // Save full URL in DB (consistent with news.image_url)
+    // Save **full URL** in DB (consistent with news.image_url)
     const result = await pool.query(
       "UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, avatar_url",
       [avatarUrl, userId]
