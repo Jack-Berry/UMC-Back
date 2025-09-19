@@ -54,14 +54,12 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 // ✅ Serve uploads with CORS
 app.use(
   "/uploads",
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "https://uselessmen.org",
-      "https://www.uselessmen.org",
-    ],
-  }),
+  (req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*"); // or restrict to your domains
+    res.header("Access-Control-Allow-Methods", "GET,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    next();
+  },
   express.static(path.join(__dirname, "uploads"))
 );
 
