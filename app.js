@@ -1,32 +1,36 @@
-// app.js
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
+const rateLimit = require("express-rate-limit");
+
+// Routes & middleware
 const authRoutes = require("./src/routes/authRoutes");
 const assessmentRoutes = require("./src/routes/assessment");
 const userRoutes = require("./src/routes/userRoutes");
-const { pool, checkConnection } = require("./src/db");
-const rateLimit = require("express-rate-limit");
-const authenticateToken = require("./src/middleware/authMiddleware");
-const requireAdmin = require("./src/middleware/requireAdmin");
 const adminAssessmentRouter = require("./src/routes/adminAssessment");
 const eventRoutes = require("./src/routes/eventRoutes");
 const newsRoutes = require("./src/routes/newsRoutes");
 const adminNewsRouter = require("./src/routes/adminNews");
+
+const { pool, checkConnection } = require("./src/db");
+const authenticateToken = require("./src/middleware/authMiddleware");
+const requireAdmin = require("./src/middleware/requireAdmin");
 
 dotenv.config();
 
 const app = express();
 app.set("trust proxy", 1);
 
+// ✅ Rate limiter
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 500, // allow 500 requests per minute
+  max: 500,
   message: "Too many requests, please try again later.",
 });
 
+// ✅ CORS
 const corsOptions = {
   origin: [
     "http://localhost:5173",
@@ -40,28 +44,33 @@ const corsOptions = {
 
 // ✅ Security
 app.use(helmet());
-
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
-app.use(express.json());
+// ✅ Body parsing with size limits
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
+// ✅ Apply limiter to all API routes
 app.use("/api/", apiLimiter);
 
+// ✅ Static uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ---------- Routes ---------
+// ---------- Routes ----------
+app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/assessment", assessmentRoutes);
+app.use("/api/events", eventRoutes);
+app.use("/api/news", newsRoutes);
+
 app.use(
   "/api/admin/assessment",
   authenticateToken,
   requireAdmin,
   adminAssessmentRouter
 );
-app.use("/api/auth", authRoutes);
-app.use("/api/assessment", assessmentRoutes);
-app.use("/api/events", eventRoutes);
-app.use("/api/news", newsRoutes);
+
 app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
 
 // ---------- Status check ----------

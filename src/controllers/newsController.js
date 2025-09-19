@@ -3,14 +3,17 @@ const fetch = require("node-fetch");
 const { JSDOM } = require("jsdom");
 
 // ---------- Public ----------
+
+// Get all news (paginated)
 exports.getAllNews = async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
 
   try {
     const result = await pool.query(
-      `SELECT * FROM news 
-       ORDER BY pinned DESC, created_at DESC 
+      `SELECT * FROM news
+       ORDER BY pinned DESC, created_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]
     );
@@ -22,13 +25,15 @@ exports.getAllNews = async (req, res) => {
   }
 };
 
+// Get single news item by ID
 exports.getNewsById = async (req, res) => {
   const { id } = req.params;
 
   try {
     const result = await pool.query("SELECT * FROM news WHERE id = $1", [id]);
-    if (result.rows.length === 0)
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Not found" });
+    }
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -39,7 +44,7 @@ exports.getNewsById = async (req, res) => {
 
 // ---------- Admin ----------
 
-// Lightweight external preview (fetch + jsdom)
+// Lightweight external link preview (fetch + jsdom)
 exports.getLinkPreview = async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL required" });
@@ -73,25 +78,28 @@ exports.getLinkPreview = async (req, res) => {
   }
 };
 
+// Create a news post
 exports.createNews = async (req, res) => {
   const { type, title, content, url, summary, image_url, pinned } = req.body;
-  const authorId = req.user?.id;
+  const authorId = req.user?.id; // populated by authMiddleware
 
-  if (!title) return res.status(400).json({ error: "Title is required" });
+  if (!title) {
+    return res.status(400).json({ error: "Title is required" });
+  }
 
   try {
     const result = await pool.query(
-      `INSERT INTO news (type, title, content, url, summary, image_url, author_id, pinned)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO news (type, title, content, url, summary, image_url, author_id, pinned, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW())
        RETURNING *`,
       [
         type || "native",
         title,
-        content,
-        url,
-        summary,
-        image_url,
-        authorId,
+        content || null,
+        url || null,
+        summary || null,
+        image_url || null,
+        authorId || null,
         pinned || false,
       ]
     );
@@ -103,20 +111,33 @@ exports.createNews = async (req, res) => {
   }
 };
 
+// Update a news post
 exports.updateNews = async (req, res) => {
   const { id } = req.params;
-  const { title, content, url, summary, image_url, pinned } = req.body;
+  const { type, title, content, url, summary, image_url, pinned } = req.body;
 
   try {
     const result = await pool.query(
       `UPDATE news
-       SET title=$1, content=$2, url=$3, summary=$4, image_url=$5, pinned=$6, updated_at=NOW()
-       WHERE id=$7 RETURNING *`,
-      [title, content, url, summary, image_url, pinned, id]
+       SET type=$1, title=$2, content=$3, url=$4, summary=$5,
+           image_url=$6, pinned=$7, updated_at=NOW()
+       WHERE id=$8
+       RETURNING *`,
+      [
+        type || "native",
+        title,
+        content || null,
+        url || null,
+        summary || null,
+        image_url || null,
+        pinned || false,
+        id,
+      ]
     );
 
-    if (result.rows.length === 0)
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Not found" });
+    }
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -125,6 +146,7 @@ exports.updateNews = async (req, res) => {
   }
 };
 
+// Delete a news post
 exports.deleteNews = async (req, res) => {
   const { id } = req.params;
 
@@ -134,8 +156,9 @@ exports.deleteNews = async (req, res) => {
       [id]
     );
 
-    if (result.rows.length === 0)
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Not found" });
+    }
 
     res.json({ message: "Deleted", deleted: result.rows[0] });
   } catch (err) {
@@ -144,12 +167,14 @@ exports.deleteNews = async (req, res) => {
   }
 };
 
+// Upload image (handled by multer)
 exports.uploadNewsImage = async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
 
   const imageUrl = `${req.protocol}://${req.get("host")}/uploads/news/${
     req.file.filename
   }`;
-
   res.json({ image_url: imageUrl });
 };
