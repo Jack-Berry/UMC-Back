@@ -55,12 +55,20 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(
   "/uploads",
   (req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*"); // or restrict to your domains
+    res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Methods", "GET,OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     next();
   },
-  express.static(path.join(__dirname, "uploads"))
+  express.static(path.join(__dirname, "uploads"), {
+    setHeaders: (res, filePath) => {
+      // Force proper content type just in case
+      if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
+      if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg"))
+        res.setHeader("Content-Type", "image/jpeg");
+      if (filePath.endsWith(".gif")) res.setHeader("Content-Type", "image/gif");
+    },
+  })
 );
 
 // ✅ Apply limiter
