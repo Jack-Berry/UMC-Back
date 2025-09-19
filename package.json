@@ -6,6 +6,10 @@
     "dev": "nodemon app.js",
     "start": "node app.js"
   },
+  "engines": {
+    "node": "20.x",
+    "npm": "10.x"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Jack-Berry/UMC-Back.git"
