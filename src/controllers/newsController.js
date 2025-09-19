@@ -1,5 +1,6 @@
 const { pool } = require("../db");
-// const ogs = require("open-graph-scraper");
+const fetch = require("node-fetch");
+const { JSDOM } = require("jsdom");
 
 // ---------- Public ----------
 exports.getAllNews = async (req, res) => {
@@ -37,20 +38,37 @@ exports.getNewsById = async (req, res) => {
 };
 
 // ---------- Admin ----------
+
+// Lightweight external preview (fetch + jsdom)
 exports.getLinkPreview = async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL required" });
 
   try {
-    const { result } = await ogs({ url });
+    const response = await fetch(url);
+    const html = await response.text();
+    const dom = new JSDOM(html);
+    const doc = dom.window.document;
 
-    res.json({
-      title: result.ogTitle || result.twitterTitle || "",
-      summary: result.ogDescription || result.twitterDescription || "",
-      image_url: result.ogImage?.url || "",
-    });
+    const title =
+      doc.querySelector("title")?.textContent ||
+      doc.querySelector('meta[property="og:title"]')?.getAttribute("content") ||
+      "";
+
+    const summary =
+      doc.querySelector('meta[name="description"]')?.getAttribute("content") ||
+      doc
+        .querySelector('meta[property="og:description"]')
+        ?.getAttribute("content") ||
+      "";
+
+    const image_url =
+      doc.querySelector('meta[property="og:image"]')?.getAttribute("content") ||
+      "";
+
+    res.json({ title, summary, image_url });
   } catch (err) {
-    console.error("OG scrape error:", err.message);
+    console.error("Preview fetch error:", err.message);
     res.status(500).json({ error: "Could not fetch metadata" });
   }
 };
@@ -129,7 +147,6 @@ exports.deleteNews = async (req, res) => {
 exports.uploadNewsImage = async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-  // Construct public URL
   const imageUrl = `${req.protocol}://${req.get("host")}/uploads/news/${
     req.file.filename
   }`;
