@@ -29,7 +29,7 @@ exports.uploadAvatar = async (req, res) => {
   }
 
   try {
-    // Build public URL (just like news images)
+    // Build public URL (same approach as news images)
     const avatarUrl = `${req.protocol}://${req.get("host")}/uploads/avatars/${
       req.file.filename
     }`;
@@ -42,8 +42,6 @@ exports.uploadAvatar = async (req, res) => {
 
     if (existing.rows.length > 0 && existing.rows[0].avatar_url) {
       const oldUrl = existing.rows[0].avatar_url;
-
-      // Only try to unlink if it was a local file, not an external link
       if (oldUrl.includes("/uploads/avatars/")) {
         const oldFile = oldUrl.split("/uploads/avatars/")[1];
         if (oldFile) {

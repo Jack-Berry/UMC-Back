@@ -1,4 +1,3 @@
-// app.js
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -49,10 +48,9 @@ const corsOptions = {
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
+  credentials: true, // 👈 required for cookies/JWT refresh
 };
 
-// ⬇️ IMPORTANT: configure Helmet so images can be embedded cross-origin
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -63,11 +61,11 @@ app.use(
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
-// ✅ Body parsing (must come BEFORE routes!)
+// ✅ Body parsing
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
-// ✅ Serve uploads with correct path
+// ✅ Serve uploads publicly
 app.use(
   "/uploads",
   (req, res, next) => {
@@ -81,7 +79,6 @@ app.use(
     next();
   },
   express.static(path.join(__dirname, "../uploads"), {
-    // 👈 changed from "uploads"
     setHeaders: (res, filePath) => {
       const ext = path.extname(filePath).toLowerCase();
       const types = {
