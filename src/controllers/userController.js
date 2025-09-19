@@ -27,7 +27,16 @@ exports.updateAvatar = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   const userId = req.params.id;
-  const { name, useful_at, useless_at, location, show_location } = req.body;
+  const {
+    name,
+    useful_at,
+    useless_at,
+    location,
+    lat,
+    lng,
+    show_location,
+    region,
+  } = req.body;
 
   try {
     const result = await pool.query(
@@ -36,15 +45,22 @@ exports.updateProfile = async (req, res) => {
            useful_at     = COALESCE($2, useful_at),
            useless_at    = COALESCE($3, useless_at),
            location      = COALESCE($4, location),
-           show_location = COALESCE($5, show_location)
-       WHERE id = $6
-       RETURNING id, name, email, avatar_url, useful_at, useless_at, location, show_location, created_at, has_completed_assessment`,
+           lat           = COALESCE($5, lat),
+           lng           = COALESCE($6, lng),
+           show_location = COALESCE($7, show_location),
+           region        = COALESCE($8, region)
+       WHERE id = $9
+       RETURNING id, name, email, avatar_url, useful_at, useless_at, 
+                 location, region, lat, lng, show_location, created_at, has_completed_assessment`,
       [
         name ?? null,
         useful_at ?? null,
         useless_at ?? null,
         location ?? null,
+        lat ?? null,
+        lng ?? null,
         show_location ?? null,
+        region ?? null,
         userId,
       ]
     );
