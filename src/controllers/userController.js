@@ -27,17 +27,26 @@ exports.updateAvatar = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   const userId = req.params.id;
-  const { name, useful_at, useless_at } = req.body;
+  const { name, useful_at, useless_at, location, show_location } = req.body;
 
   try {
     const result = await pool.query(
       `UPDATE users
-       SET name       = COALESCE($1, name),
-           useful_at  = COALESCE($2, useful_at),
-           useless_at = COALESCE($3, useless_at)
-       WHERE id = $4
-       RETURNING id, name, email, avatar_url, useful_at, useless_at, created_at, has_completed_assessment`,
-      [name ?? null, useful_at ?? null, useless_at ?? null, userId]
+       SET name          = COALESCE($1, name),
+           useful_at     = COALESCE($2, useful_at),
+           useless_at    = COALESCE($3, useless_at),
+           location      = COALESCE($4, location),
+           show_location = COALESCE($5, show_location)
+       WHERE id = $6
+       RETURNING id, name, email, avatar_url, useful_at, useless_at, location, show_location, created_at, has_completed_assessment`,
+      [
+        name ?? null,
+        useful_at ?? null,
+        useless_at ?? null,
+        location ?? null,
+        show_location ?? null,
+        userId,
+      ]
     );
 
     if (result.rowCount === 0) {
