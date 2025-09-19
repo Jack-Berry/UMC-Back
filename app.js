@@ -26,7 +26,7 @@ app.set("trust proxy", 1);
 
 // ✅ Rate limiter
 const apiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
+  windowMs: 60 * 1000,
   max: 500,
   message: "Too many requests, please try again later.",
 });
@@ -43,7 +43,14 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-app.use(helmet());
+// ⬇️ IMPORTANT: configure Helmet so images can be embedded cross-origin
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false, // not needed for images, but keep off to avoid stricter COEP
+  })
+);
+
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
@@ -51,22 +58,34 @@ app.options(/.*/, cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
-// ✅ Serve uploads with CORS
+// ✅ Serve uploads with permissive headers + correct MIME
 app.use(
   "/uploads",
   (req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Methods", "GET,OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Origin", "*"); // or restrict to your domains
+    res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization"
+    );
+    // override any global CORP to allow embedding from uselessmen.org
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
   },
   express.static(path.join(__dirname, "uploads"), {
     setHeaders: (res, filePath) => {
-      // Force proper content type just in case
-      if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
-      if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg"))
-        res.setHeader("Content-Type", "image/jpeg");
-      if (filePath.endsWith(".gif")) res.setHeader("Content-Type", "image/gif");
+      const ext = path.extname(filePath).toLowerCase();
+      const types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+      };
+      if (types[ext]) res.setHeader("Content-Type", types[ext]);
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     },
   })
 );
@@ -93,7 +112,6 @@ app.use(
 // ---------- Status check ----------
 app.get("/api/status", async (req, res) => {
   const dbOk = await checkConnection();
-
   res.json({
     status: "ok",
     db: dbOk ? "connected" : "disconnected",
@@ -106,7 +124,6 @@ app.get("/api/status", async (req, res) => {
 // ---------- Demo fallback ----------
 app.get("/api/demo-assessment", async (req, res) => {
   const dbOk = await checkConnection();
-
   if (!dbOk) {
     return res.json({
       status: "ok",
@@ -117,7 +134,6 @@ app.get("/api/demo-assessment", async (req, res) => {
       ],
     });
   }
-
   try {
     const result = await pool.query("SELECT * FROM assessments");
     res.json({ status: "ok", source: "db", assessments: result.rows });
