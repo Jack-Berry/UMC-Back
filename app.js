@@ -1,5 +1,6 @@
 const express = require("express");
 const helmet = require("helmet");
+const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 const rateLimit = require("express-rate-limit");
@@ -29,15 +30,7 @@ const apiLimiter = rateLimit({
   message: "Too many requests, please try again later.",
 });
 
-// ✅ Helmet
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-    crossOriginEmbedderPolicy: false,
-  })
-);
-
-// 🔹 Minimal, explicit CORS middleware
+// ✅ Security + CORS
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
@@ -45,23 +38,28 @@ const allowedOrigins = [
   "https://www.uselessmen.org",
 ];
 
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-  );
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, origin);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+};
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  next();
-});
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 // ✅ Body parsing
 app.use(express.json({ limit: "10mb" }));
@@ -70,6 +68,20 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 // ✅ Serve uploads publicly (avatars + news)
 app.use(
   "/uploads",
+  (req, res, next) => {
+    const origin = req.headers.origin;
+    if (!origin || allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin || "*");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization"
+    );
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  },
   express.static(path.join(__dirname, "uploads"), {
     setHeaders: (res, filePath) => {
       const ext = path.extname(filePath).toLowerCase();
@@ -111,9 +123,34 @@ app.use(
 app.get("/api/status", async (req, res) => {
   const dbOk = await checkConnection();
   res.json({
-    message: "CORS is working!",
+    status: "ok",
     db: dbOk ? "connected" : "disconnected",
+    message: dbOk
+      ? "API and DB are both live"
+      : "API is live, DB not connected – showing mock data",
   });
+});
+
+// ---------- Demo fallback ----------
+app.get("/api/demo-assessment", async (req, res) => {
+  const dbOk = await checkConnection();
+  if (!dbOk) {
+    return res.json({
+      status: "ok",
+      source: "mock",
+      assessments: [
+        { id: 1, category: "DIY", score: 3 },
+        { id: 2, category: "Technology", score: 4 },
+      ],
+    });
+  }
+  try {
+    const result = await pool.query("SELECT * FROM assessments");
+    res.json({ status: "ok", source: "db", assessments: result.rows });
+  } catch (err) {
+    console.error("DB query error:", err.message);
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
 const PORT = process.env.PORT || 5000;
