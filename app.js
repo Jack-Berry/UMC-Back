@@ -61,6 +61,12 @@ app.use(
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
+// 🔧 Force credentials header for all API responses
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Credentials", "true");
+  next();
+});
+
 // ✅ Body parsing
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
