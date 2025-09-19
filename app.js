@@ -3,6 +3,7 @@ const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const path = require("path");
 const authRoutes = require("./src/routes/authRoutes");
 const assessmentRoutes = require("./src/routes/assessment");
 const userRoutes = require("./src/routes/userRoutes");
@@ -12,6 +13,8 @@ const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
 const adminAssessmentRouter = require("./src/routes/adminAssessment");
 const eventRoutes = require("./src/routes/eventRoutes");
+const newsRoutes = require("./src/routes/newsRoutes");
+const adminNewsRouter = require("./src/routes/adminNews");
 
 dotenv.config();
 
@@ -45,6 +48,8 @@ app.use(express.json());
 
 app.use("/api/", apiLimiter);
 
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 // ---------- Routes ---------
 app.use("/api/users", userRoutes);
 app.use(
@@ -56,6 +61,8 @@ app.use(
 app.use("/api/auth", authRoutes);
 app.use("/api/assessment", assessmentRoutes);
 app.use("/api/events", eventRoutes);
+app.use("/api/news", newsRoutes);
+app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
 
 // ---------- Status check ----------
 app.get("/api/status", async (req, res) => {
