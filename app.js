@@ -1,6 +1,5 @@
 const express = require("express");
 const helmet = require("helmet");
-const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 const rateLimit = require("express-rate-limit");
@@ -30,7 +29,7 @@ const apiLimiter = rateLimit({
   message: "Too many requests, please try again later.",
 });
 
-// ✅ Security + CORS
+// ✅ Allowed origins
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
@@ -38,34 +37,33 @@ const allowedOrigins = [
   "https://www.uselessmen.org",
 ];
 
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
-};
+// ✅ Global CORS middleware (fix for preflight)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin || allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin || "*");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
 
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
+// ✅ Helmet
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginEmbedderPolicy: false,
   })
 );
-
-app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));
-
-// 🔧 Force credentials header for all API responses
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Credentials", "true");
-  next();
-});
 
 // ✅ Body parsing
 app.use(express.json({ limit: "10mb" }));
