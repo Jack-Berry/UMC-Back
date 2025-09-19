@@ -30,6 +30,7 @@ exports.createEvent = async (req, res) => {
   const {
     title,
     description,
+    venue,
     location,
     latitude,
     longitude,
@@ -43,12 +44,13 @@ exports.createEvent = async (req, res) => {
 
   try {
     const result = await pool.query(
-      `INSERT INTO events (title, description, location, latitude, longitude, start_at, end_at, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO events (title, description, venue, location, latitude, longitude, start_at, end_at, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         title,
         description,
+        venue || null,
         location,
         latitude || null,
         longitude || null,
@@ -128,5 +130,104 @@ exports.getUserEvents = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch user events" });
+  }
+};
+
+// Get single event details
+exports.getEventById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT e.*, u.name AS creator_name
+       FROM events e
+       LEFT JOIN users u ON e.created_by = u.id
+       WHERE e.id = $1`,
+      [id]
+    );
+    if (result.rowCount === 0)
+      return res.status(404).json({ error: "Event not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch event" });
+  }
+};
+
+// Update event
+
+exports.updateEvent = async (req, res) => {
+  const { id } = req.params;
+  const {
+    title,
+    description,
+    venue,
+    location,
+    latitude,
+    longitude,
+    start_at,
+    end_at,
+  } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE events
+       SET title = $1,
+           description = $2,
+           venue = $3,
+           location = $4,
+           latitude = $5,
+           longitude = $6,
+           start_at = $7,
+           end_at = $8,
+           updated_at = NOW()
+       WHERE id = $9 AND created_by = $10
+       RETURNING *`,
+      [
+        title,
+        description,
+        venue,
+        location,
+        latitude,
+        longitude,
+        start_at,
+        end_at,
+        id,
+        req.user.id,
+      ]
+    );
+
+    if (result.rowCount === 0) {
+      return res
+        .status(403)
+        .json({ error: "Not authorized or event not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Update event error:", err);
+    res.status(500).json({ error: "Failed to update event" });
+  }
+};
+
+// Delete event
+exports.deleteEvent = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM events WHERE id = $1 AND created_by = $2 RETURNING *`,
+      [id, req.user.id]
+    );
+
+    if (result.rowCount === 0) {
+      return res
+        .status(403)
+        .json({ error: "Not authorized or event not found" });
+    }
+
+    res.json({ message: "Event deleted", removed: result.rows[0] });
+  } catch (err) {
+    console.error("Delete event error:", err);
+    res.status(500).json({ error: "Failed to delete event" });
   }
 };
