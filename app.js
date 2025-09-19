@@ -37,7 +37,7 @@ const allowedOrigins = [
   "https://www.uselessmen.org",
 ];
 
-// ✅ Unified CORS middleware
+// ✅ Global CORS middleware (handles preflight)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
@@ -51,9 +51,6 @@ app.use((req, res, next) => {
     "GET,POST,PUT,PATCH,DELETE,OPTIONS"
   );
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  // Debug log (remove later)
-  console.log("CORS headers:", res.getHeaders());
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
@@ -74,12 +71,24 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
-// ✅ Serve uploads (avatars + news) with no caching during debug
+// ✅ Serve uploads publicly (avatars + news)
 app.use(
   "/uploads",
+  (req, res, next) => {
+    const origin = req.headers.origin;
+    if (!origin || allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin || "*");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization"
+    );
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  },
   express.static(path.join(__dirname, "uploads"), {
-    etag: false,
-    lastModified: false,
     setHeaders: (res, filePath) => {
       const ext = path.extname(filePath).toLowerCase();
       const types = {
@@ -91,6 +100,7 @@ app.use(
         ".svg": "image/svg+xml",
       };
       if (types[ext]) res.setHeader("Content-Type", types[ext]);
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     },
   })
@@ -147,6 +157,21 @@ app.get("/api/demo-assessment", async (req, res) => {
     console.error("DB query error:", err.message);
     res.status(500).json({ error: "Database error" });
   }
+});
+
+// ✅ Enforcer: make sure *all* responses include CORS headers
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  next();
 });
 
 const PORT = process.env.PORT || 5000;
