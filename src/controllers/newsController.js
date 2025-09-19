@@ -1,5 +1,5 @@
 const { pool } = require("../db");
-const ogs = require("open-graph-scraper");
+// const ogs = require("open-graph-scraper");
 
 // ---------- Public ----------
 exports.getAllNews = async (req, res) => {
