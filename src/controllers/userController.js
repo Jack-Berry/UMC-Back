@@ -4,7 +4,7 @@ const { pool } = require("../db");
 
 // Multer setup (middleware)
 const multer = require("multer");
-const uploadDir = path.join(__dirname, "../../uploads/avatars");
+const uploadDir = path.join(__dirname, "../uploads/avatars");
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
