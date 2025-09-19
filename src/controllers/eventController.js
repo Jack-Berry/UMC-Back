@@ -171,26 +171,26 @@ exports.updateEvent = async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE events
-       SET title = $1,
-           description = $2,
-           venue = $3,
-           location = $4,
-           latitude = $5,
-           longitude = $6,
-           start_at = $7,
-           end_at = $8,
+       SET title = COALESCE($1, title),
+           description = COALESCE($2, description),
+           venue = COALESCE($3, venue),
+           location = COALESCE($4, location),
+           latitude = COALESCE($5, latitude),
+           longitude = COALESCE($6, longitude),
+           start_at = COALESCE($7, start_at),
+           end_at = COALESCE($8, end_at),
            updated_at = NOW()
        WHERE id = $9 AND created_by = $10
        RETURNING *`,
       [
-        title,
-        description,
-        venue,
-        location,
-        latitude,
-        longitude,
-        start_at,
-        end_at,
+        title || null,
+        description || null,
+        venue || null,
+        location || null,
+        latitude || null,
+        longitude || null,
+        start_at || null,
+        end_at || null,
         id,
         req.user.id,
       ]
