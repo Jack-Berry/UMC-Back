@@ -1,3 +1,4 @@
+// app.js
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -30,7 +31,7 @@ const apiLimiter = rateLimit({
   message: "Too many requests, please try again later.",
 });
 
-// ✅ CORS
+// ✅ Security + CORS
 const corsOptions = {
   origin: [
     "http://localhost:5173",
@@ -42,35 +43,19 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-// ✅ Security
 app.use(helmet());
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
+// ✅ Body parsing (must come BEFORE routes!)
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
+
 // ✅ Static uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ✅ Apply limiter to all API routes
+// ✅ Apply limiter
 app.use("/api/", apiLimiter);
-
-// ⚠️ Important: put admin/news upload route BEFORE JSON parsers
-app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
-
-// Debug incoming requests
-app.use((req, res, next) => {
-  console.log(
-    "➡️",
-    req.method,
-    req.url,
-    "Content-Type:",
-    req.headers["content-type"]
-  );
-  next();
-});
-
-// ✅ JSON parsing (after multer routes)
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 // ---------- Routes ----------
 app.use("/api/auth", authRoutes);
@@ -78,6 +63,9 @@ app.use("/api/users", userRoutes);
 app.use("/api/assessment", assessmentRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/news", newsRoutes);
+
+// ---------- Admin routes ----------
+app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
 
 app.use(
   "/api/admin/assessment",
