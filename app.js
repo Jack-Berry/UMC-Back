@@ -41,12 +41,15 @@ const allowedOrigins = [
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true); // not `origin`
+      callback(null, origin);
     } else {
       callback(new Error("Not allowed by CORS"));
     }
   },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
+  optionsSuccessStatus: 204, // ensures OPTIONS requests don’t fail
 };
 
 app.use(
@@ -58,6 +61,43 @@ app.use(
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
+
+// ✅ Debug logging (only in non-production)
+if (process.env.NODE_ENV !== "production") {
+  // Log preflight requests
+  app.use((req, res, next) => {
+    if (req.method === "OPTIONS") {
+      console.log("🔍 Preflight Request:", {
+        origin: req.headers.origin,
+        path: req.path,
+        reqHeaders: req.headers["access-control-request-headers"],
+        reqMethod: req.headers["access-control-request-method"],
+      });
+    }
+    next();
+  });
+
+  // Log outgoing CORS headers
+  app.use((req, res, next) => {
+    const _setHeader = res.setHeader.bind(res);
+    res.setHeader = (name, value) => {
+      if (name.toLowerCase().startsWith("access-control-")) {
+        console.log(`🛡️ CORS Header: ${name} = ${value}`);
+      }
+      _setHeader(name, value);
+    };
+    next();
+  });
+
+  // Debug endpoint to inspect received headers
+  app.get("/api/debug-cors", (req, res) => {
+    res.json({
+      receivedOrigin: req.headers.origin,
+      receivedAuth: req.headers.authorization ? "present" : "missing",
+      method: req.method,
+    });
+  });
+}
 
 // ✅ Body parsing
 app.use(express.json({ limit: "10mb" }));
