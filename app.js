@@ -59,16 +59,17 @@ app.use(
   })
 );
 
+// Apply CORS first
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
-// ✅ Force credentials header globally (fixes 304 issue)
+// ✅ Force credentials header globally (ensures it’s always present)
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Credentials", "true");
   next();
 });
 
-// ✅ Debug logging (only in non-production)
+// ✅ Debug logging (non-production only)
 if (process.env.NODE_ENV !== "production") {
   app.use((req, res, next) => {
     if (req.method === "OPTIONS") {
