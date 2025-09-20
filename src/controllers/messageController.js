@@ -1,5 +1,5 @@
-// src/controllers/messageController.js
 const { pool } = require("../db");
+const { getIO } = require("../socket"); // ✅ use socket instance
 
 // helper: check if two users are friends
 async function isFriends(userA, userB) {
@@ -14,7 +14,7 @@ async function isFriends(userA, userB) {
 
 // ---------- Public ----------
 
-// Create or fetch conversation (plaintext mode)
+// Create or fetch conversation
 exports.getOrCreateConversation = async (req, res) => {
   try {
     const actorId = req.user.id;
@@ -23,7 +23,6 @@ exports.getOrCreateConversation = async (req, res) => {
     const allowed = await isFriends(actorId, peerId);
     if (!allowed) return res.status(403).json({ error: "Not allowed" });
 
-    // Check existing conversation
     const { rows: found } = await pool.query(
       `SELECT c.id
        FROM conversations c
@@ -34,7 +33,6 @@ exports.getOrCreateConversation = async (req, res) => {
     );
     if (found.length) return res.json({ id: found[0].id });
 
-    // Create new conversation
     const { rows } = await pool.query(
       `INSERT INTO conversations (created_by, key_salt)
        VALUES ($1, decode(repeat('00',32),'hex'))
@@ -56,7 +54,7 @@ exports.getOrCreateConversation = async (req, res) => {
   }
 };
 
-// Send plaintext message
+// Send message
 exports.sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
@@ -80,14 +78,26 @@ exports.sendMessage = async (req, res) => {
       [conversationId, senderId, text]
     );
 
-    res.json(msg[0]);
+    const message = {
+      id: msg[0].id,
+      senderId,
+      text,
+      createdAt: msg[0].created_at,
+      conversationId,
+    };
+
+    // ✅ Emit new message to thread room
+    const io = getIO();
+    io.to(`thread_${conversationId}`).emit("newMessage", message);
+
+    res.json(message);
   } catch (err) {
     console.error("Error sending message:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };
 
-// List plaintext messages
+// List messages
 exports.listMessages = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -115,6 +125,8 @@ exports.listMessages = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+
+// List threads
 exports.listThreads = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -134,7 +146,7 @@ exports.listThreads = async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error listing threads:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };

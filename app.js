@@ -1,4 +1,5 @@
 const express = require("express");
+const http = require("http"); // ✅ needed for socket.io
 const helmet = require("helmet");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -19,6 +20,7 @@ const messageRoutes = require("./src/routes/messageRoutes");
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
+const { initSocket } = require("./src/socket"); // ✅ new
 
 dotenv.config();
 
@@ -61,49 +63,8 @@ app.use(
   })
 );
 
-// Apply CORS first
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
-
-// ✅ Force credentials header globally
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Credentials", "true");
-  next();
-});
-
-// ✅ Debug logging (non-production only)
-if (process.env.NODE_ENV !== "production") {
-  app.use((req, res, next) => {
-    if (req.method === "OPTIONS") {
-      console.log("🔍 Preflight Request:", {
-        origin: req.headers.origin,
-        path: req.path,
-        reqHeaders: req.headers["access-control-request-headers"],
-        reqMethod: req.headers["access-control-request-method"],
-      });
-    }
-    next();
-  });
-
-  app.use((req, res, next) => {
-    const _setHeader = res.setHeader.bind(res);
-    res.setHeader = (name, value) => {
-      if (name.toLowerCase().startsWith("access-control-")) {
-        console.log(`🛡️ CORS Header: ${name} = ${value}`);
-      }
-      _setHeader(name, value);
-    };
-    next();
-  });
-
-  app.get("/api/debug-cors", (req, res) => {
-    res.json({
-      receivedOrigin: req.headers.origin,
-      receivedAuth: req.headers.authorization ? "present" : "missing",
-      method: req.method,
-    });
-  });
-}
 
 // ✅ Body parsing
 app.use(express.json({ limit: "10mb" }));
@@ -199,7 +160,11 @@ app.get("/api/demo-assessment", async (req, res) => {
   }
 });
 
+// ---------- Start Server with Socket.IO ----------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+const server = http.createServer(app);
+initSocket(server); // ✅ setup socket.io
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
