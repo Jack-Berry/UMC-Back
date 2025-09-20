@@ -13,6 +13,7 @@ const adminAssessmentRouter = require("./src/routes/adminAssessment");
 const eventRoutes = require("./src/routes/eventRoutes");
 const newsRoutes = require("./src/routes/newsRoutes");
 const adminNewsRouter = require("./src/routes/adminNews");
+const friendRoutes = require("./src/routes/friendRoutes"); // ✅ new
 
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
@@ -63,7 +64,7 @@ app.use(
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
-// ✅ Force credentials header globally (ensures it’s always present)
+// ✅ Force credentials header globally
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Credentials", "true");
   next();
@@ -151,6 +152,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/assessment", assessmentRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/news", newsRoutes);
+app.use("/api/friends", friendRoutes); // ✅ new
 
 // ---------- Admin routes ----------
 app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
