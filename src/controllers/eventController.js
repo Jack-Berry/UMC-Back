@@ -1,26 +1,53 @@
 const { pool } = require("../db");
 
-// Get all events
+// Get all events (optionally sorted by distance)
 exports.getEvents = async (req, res) => {
   try {
     const userId = req.user ? req.user.id : null; // logged-in user if available
+    const { lat, lng } = req.query;
 
-    const result = await pool.query(
-      `
-      SELECT e.*,
-             u.name AS creator_name,
-             CASE WHEN r.user_id IS NOT NULL THEN true ELSE false END AS is_registered
-      FROM events e
-      LEFT JOIN users u ON e.created_by = u.id
-      LEFT JOIN event_registrations r ON e.id = r.event_id AND r.user_id = $1
-      ORDER BY start_at ASC
-      `,
-      [userId]
-    );
+    let result;
+
+    if (lat && lng) {
+      // With distance calculation
+      result = await pool.query(
+        `
+        SELECT e.*,
+               u.name AS creator_name,
+               CASE WHEN r.user_id IS NOT NULL THEN true ELSE false END AS is_registered,
+               (6371 * acos(
+                 cos(radians($2)) *
+                 cos(radians(e.latitude)) *
+                 cos(radians(e.longitude) - radians($3)) +
+                 sin(radians($2)) *
+                 sin(radians(e.latitude))
+               )) AS distance_km
+        FROM events e
+        LEFT JOIN users u ON e.created_by = u.id
+        LEFT JOIN event_registrations r ON e.id = r.event_id AND r.user_id = $1
+        ORDER BY distance_km ASC
+        `,
+        [userId, lat, lng]
+      );
+    } else {
+      // Default: sort by date
+      result = await pool.query(
+        `
+        SELECT e.*,
+               u.name AS creator_name,
+               CASE WHEN r.user_id IS NOT NULL THEN true ELSE false END AS is_registered
+        FROM events e
+        LEFT JOIN users u ON e.created_by = u.id
+        LEFT JOIN event_registrations r ON e.id = r.event_id AND r.user_id = $1
+        ORDER BY e.start_at ASC
+        `,
+        [userId]
+      );
+    }
 
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching events:", err);
     res.status(500).json({ error: "Failed to fetch events" });
   }
 };
