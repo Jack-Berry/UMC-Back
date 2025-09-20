@@ -13,7 +13,8 @@ const adminAssessmentRouter = require("./src/routes/adminAssessment");
 const eventRoutes = require("./src/routes/eventRoutes");
 const newsRoutes = require("./src/routes/newsRoutes");
 const adminNewsRouter = require("./src/routes/adminNews");
-const friendRoutes = require("./src/routes/friendRoutes"); // ✅ new
+const friendRoutes = require("./src/routes/friendRoutes");
+const messageRoutes = require("./src/routes/messageRoutes");
 
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
@@ -152,7 +153,8 @@ app.use("/api/users", userRoutes);
 app.use("/api/assessment", assessmentRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/news", newsRoutes);
-app.use("/api/friends", friendRoutes); // ✅ new
+app.use("/api/friends", friendRoutes);
+app.use("/api/msg", messageRoutes);
 
 // ---------- Admin routes ----------
 app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
