@@ -115,3 +115,26 @@ exports.listMessages = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+exports.listThreads = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { rows } = await pool.query(
+      `
+      SELECT c.id, c.created_at, json_agg(u.id) AS participants
+      FROM conversations c
+      JOIN conversation_participants p ON p.conversation_id = c.id
+      JOIN users u ON u.id = p.user_id
+      WHERE c.id IN (
+        SELECT conversation_id FROM conversation_participants WHERE user_id=$1
+      )
+      GROUP BY c.id
+      ORDER BY c.created_at DESC
+    `,
+      [userId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
