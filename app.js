@@ -49,7 +49,7 @@ const corsOptions = {
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
-  optionsSuccessStatus: 204, // ensures OPTIONS requests don’t fail
+  optionsSuccessStatus: 204,
 };
 
 app.use(
@@ -62,9 +62,14 @@ app.use(
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
+// ✅ Force credentials header globally (fixes 304 issue)
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  next();
+});
+
 // ✅ Debug logging (only in non-production)
 if (process.env.NODE_ENV !== "production") {
-  // Log preflight requests
   app.use((req, res, next) => {
     if (req.method === "OPTIONS") {
       console.log("🔍 Preflight Request:", {
@@ -77,7 +82,6 @@ if (process.env.NODE_ENV !== "production") {
     next();
   });
 
-  // Log outgoing CORS headers
   app.use((req, res, next) => {
     const _setHeader = res.setHeader.bind(res);
     res.setHeader = (name, value) => {
@@ -89,7 +93,6 @@ if (process.env.NODE_ENV !== "production") {
     next();
   });
 
-  // Debug endpoint to inspect received headers
   app.get("/api/debug-cors", (req, res) => {
     res.json({
       receivedOrigin: req.headers.origin,
@@ -103,7 +106,7 @@ if (process.env.NODE_ENV !== "production") {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
-// ✅ Serve uploads publicly (avatars + news)
+// ✅ Serve uploads publicly
 app.use(
   "/uploads",
   (req, res, next) => {
