@@ -1,3 +1,4 @@
+// app.js
 const express = require("express");
 const http = require("http"); // ✅ needed for socket.io
 const helmet = require("helmet");
@@ -20,7 +21,7 @@ const messageRoutes = require("./src/routes/messageRoutes");
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
-const { initSocket } = require("./src/socket"); // ✅ new
+const { initSocket } = require("./src/socket"); // ✅ socket.io bootstrap
 
 dotenv.config();
 
@@ -163,7 +164,7 @@ app.get("/api/demo-assessment", async (req, res) => {
 // ---------- Start Server with Socket.IO ----------
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
-initSocket(server); // ✅ setup socket.io
+initSocket(server); // ✅ wire socket.io to HTTP server
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
