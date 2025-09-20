@@ -1,5 +1,5 @@
 const { pool } = require("../db");
-const { getIO } = require("../socket"); // ✅ use socket instance
+const { getIO } = require("../socket");
 
 // helper: check if two users are friends
 async function isFriends(userA, userB) {
@@ -23,6 +23,7 @@ exports.getOrCreateConversation = async (req, res) => {
     const allowed = await isFriends(actorId, peerId);
     if (!allowed) return res.status(403).json({ error: "Not allowed" });
 
+    // Check existing conversation
     const { rows: found } = await pool.query(
       `SELECT c.id
        FROM conversations c
@@ -33,6 +34,7 @@ exports.getOrCreateConversation = async (req, res) => {
     );
     if (found.length) return res.json({ id: found[0].id });
 
+    // Create new conversation
     const { rows } = await pool.query(
       `INSERT INTO conversations (created_by, key_salt)
        VALUES ($1, decode(repeat('00',32),'hex'))
@@ -54,7 +56,7 @@ exports.getOrCreateConversation = async (req, res) => {
   }
 };
 
-// Send message
+// Send plaintext message
 exports.sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
@@ -74,21 +76,20 @@ exports.sendMessage = async (req, res) => {
     const { rows: msg } = await pool.query(
       `INSERT INTO messages (conversation_id, sender_id, text)
        VALUES ($1,$2,$3)
-       RETURNING id, text, created_at`,
+       RETURNING id, sender_id, text, created_at`,
       [conversationId, senderId, text]
     );
 
     const message = {
       id: msg[0].id,
-      senderId,
-      text,
+      senderId: msg[0].sender_id,
+      text: msg[0].text,
       createdAt: msg[0].created_at,
       conversationId,
     };
 
-    // ✅ Emit new message to thread room
-    const io = getIO();
-    io.to(`thread_${conversationId}`).emit("newMessage", message);
+    // 🔹 Emit socket event
+    getIO().to(`thread_${conversationId}`).emit("newMessage", message);
 
     res.json(message);
   } catch (err) {
@@ -119,7 +120,16 @@ exports.listMessages = async (req, res) => {
       [conversationId]
     );
 
-    res.json(msgs);
+    // 🔹 Normalize keys
+    const normalized = msgs.map((m) => ({
+      id: m.id,
+      senderId: m.sender_id,
+      text: m.text,
+      createdAt: m.created_at,
+      conversationId,
+    }));
+
+    res.json(normalized);
   } catch (err) {
     console.error("Error listing messages:", err.message);
     res.status(500).json({ error: "Server error" });
@@ -144,9 +154,17 @@ exports.listThreads = async (req, res) => {
     `,
       [userId]
     );
-    res.json(rows);
+
+    // normalize participants
+    const normalized = rows.map((r) => ({
+      id: r.id,
+      createdAt: r.created_at,
+      participants: r.participants,
+    }));
+
+    res.json(normalized);
   } catch (err) {
-    console.error("Error listing threads:", err.message);
+    console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 };
