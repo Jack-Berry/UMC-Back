@@ -1,3 +1,4 @@
+// src/controllers/messageController.js
 const { pool } = require("../db");
 
 // helper: check if two users are friends
@@ -11,6 +12,8 @@ async function isFriends(userA, userB) {
   return rows.length > 0;
 }
 
+// ---------- Public ----------
+
 // Create or fetch conversation (plaintext mode)
 exports.getOrCreateConversation = async (req, res) => {
   try {
@@ -20,7 +23,7 @@ exports.getOrCreateConversation = async (req, res) => {
     const allowed = await isFriends(actorId, peerId);
     if (!allowed) return res.status(403).json({ error: "Not allowed" });
 
-    // Check existing
+    // Check existing conversation
     const { rows: found } = await pool.query(
       `SELECT c.id
        FROM conversations c
@@ -48,7 +51,7 @@ exports.getOrCreateConversation = async (req, res) => {
 
     res.json({ id: convId });
   } catch (err) {
-    console.error(err);
+    console.error("Error creating conversation:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };
@@ -63,7 +66,8 @@ exports.sendMessage = async (req, res) => {
     if (!text) return res.status(400).json({ error: "Message text required" });
 
     const { rows: part } = await pool.query(
-      `SELECT 1 FROM conversation_participants WHERE conversation_id=$1 AND user_id=$2`,
+      `SELECT 1 FROM conversation_participants 
+       WHERE conversation_id=$1 AND user_id=$2`,
       [conversationId, senderId]
     );
     if (!part.length)
@@ -78,7 +82,7 @@ exports.sendMessage = async (req, res) => {
 
     res.json(msg[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Error sending message:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };
@@ -90,7 +94,8 @@ exports.listMessages = async (req, res) => {
     const conversationId = req.params.id;
 
     const { rows: part } = await pool.query(
-      `SELECT 1 FROM conversation_participants WHERE conversation_id=$1 AND user_id=$2`,
+      `SELECT 1 FROM conversation_participants 
+       WHERE conversation_id=$1 AND user_id=$2`,
       [conversationId, userId]
     );
     if (!part.length)
@@ -106,7 +111,7 @@ exports.listMessages = async (req, res) => {
 
     res.json(msgs);
   } catch (err) {
-    console.error(err);
+    console.error("Error listing messages:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };
