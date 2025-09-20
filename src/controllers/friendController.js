@@ -30,23 +30,35 @@ exports.sendRequest = async (req, res) => {
 exports.acceptRequest = async (req, res) => {
   try {
     const userId = req.user.id;
-    const requesterId = parseInt(req.params.id, 10);
+    const requestId = parseInt(req.params.id, 10);
 
     const result = await pool.query(
-      `UPDATE friends
+      `UPDATE friends f
        SET status = 'accepted', updated_at = NOW()
-       WHERE requester_id = $1 AND receiver_id = $2 AND status = 'pending'
-       RETURNING *`,
-      [requesterId, userId]
+       WHERE f.id = $1 AND f.receiver_id = $2 AND f.status = 'pending'
+       RETURNING f.*`,
+      [requestId, userId]
     );
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "No pending request found" });
     }
 
+    // Now join to return full friend info (other user)
+    const row = result.rows[0];
+    const otherUserId =
+      row.requester_id === userId ? row.receiver_id : row.requester_id;
+
+    const friendData = await pool.query(
+      `SELECT u.id, u.name, u.avatar_url
+       FROM users u
+       WHERE u.id = $1`,
+      [otherUserId]
+    );
+
     res.json({
       message: "Friend request accepted",
-      friendship: result.rows[0],
+      friend: friendData.rows[0],
     });
   } catch (err) {
     console.error("Accept friend request error:", err);
@@ -58,13 +70,13 @@ exports.acceptRequest = async (req, res) => {
 exports.declineRequest = async (req, res) => {
   try {
     const userId = req.user.id;
-    const requesterId = parseInt(req.params.id, 10);
+    const requestId = parseInt(req.params.id, 10);
 
     const result = await pool.query(
       `DELETE FROM friends
-       WHERE requester_id = $1 AND receiver_id = $2 AND status = 'pending'
+       WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
        RETURNING *`,
-      [requesterId, userId]
+      [requestId, userId]
     );
 
     if (result.rowCount === 0) {
