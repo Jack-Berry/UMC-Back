@@ -1,17 +1,16 @@
-// src/routes/userRoutes.js
 const express = require("express");
 const router = express.Router();
 const {
+  uploadAvatar,
   updateProfile,
-  updateAvatar,
+  upload,
 } = require("../controllers/userController");
 const authenticateToken = require("../middleware/authMiddleware");
-const noCache = require("../middleware/noCache");
 
-// ✅ Update profile
-router.put("/:id", authenticateToken, noCache, updateProfile);
+// Avatar upload (with multer middleware)
+router.put("/:id/avatar", authenticateToken, upload, uploadAvatar);
 
-// ✅ Update avatar
-router.post("/:id/avatar", authenticateToken, noCache, updateAvatar);
+// Profile update
+router.put("/:id", authenticateToken, updateProfile);
 
 module.exports = router;

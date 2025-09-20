@@ -1,10 +1,13 @@
-// src/routes/newsRoutes.js
 const express = require("express");
 const router = express.Router();
-const { getAllNews, getNewsById } = require("../controllers/newsController");
+const newsController = require("../controllers/newsController");
 
-// ✅ Public feed routes
-router.get("/", getAllNews);
-router.get("/:id", getNewsById);
+// ---------- Public routes ----------
+
+// Get paginated list of news
+router.get("/", newsController.getAllNews);
+
+// Get single news item by ID
+router.get("/:id", newsController.getNewsById);
 
 module.exports = router;

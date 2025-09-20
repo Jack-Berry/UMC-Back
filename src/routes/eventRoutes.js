@@ -1,27 +1,28 @@
-// src/routes/eventRoutes.js
 const express = require("express");
 const router = express.Router();
-const {
-  getAllEvents,
-  getEventById,
-  createEvent,
-  updateEvent,
-  deleteEvent,
-  registerForEvent,
-  getUserEvents,
-} = require("../controllers/eventController");
+const eventController = require("../controllers/eventController");
 const authenticateToken = require("../middleware/authMiddleware");
-const noCache = require("../middleware/noCache");
 
-// ✅ Public event browsing
-router.get("/", getAllEvents);
-router.get("/:id", getEventById);
+// Public
+router.get("/", eventController.getEvents);
+router.get("/:id", eventController.getEventById);
 
-// ✅ Protected routes
-router.post("/", authenticateToken, noCache, createEvent);
-router.put("/:id", authenticateToken, noCache, updateEvent);
-router.delete("/:id", authenticateToken, noCache, deleteEvent);
-router.post("/:id/register", authenticateToken, noCache, registerForEvent);
-router.get("/user/:id", authenticateToken, noCache, getUserEvents);
+// Protected
+router.post("/", authenticateToken, eventController.createEvent);
+router.put("/:id", authenticateToken, eventController.updateEvent);
+router.delete("/:id", authenticateToken, eventController.deleteEvent);
+
+router.post(
+  "/:id/register",
+  authenticateToken,
+  eventController.registerInterest
+);
+router.delete(
+  "/:id/unregister",
+  authenticateToken,
+  eventController.unregisterInterest
+);
+
+router.get("/user/:id", authenticateToken, eventController.getUserEvents);
 
 module.exports = router;

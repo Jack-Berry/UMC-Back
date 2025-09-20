@@ -1,26 +1,19 @@
-// src/routes/authRoutes.js
 const express = require("express");
+const authenticateToken = require("../middleware/authMiddleware");
 const router = express.Router();
 const {
   register,
   login,
   refresh,
-  getUserById,
+  fetchUserByID,
 } = require("../controllers/authController");
-const authenticateToken = require("../middleware/authMiddleware");
-const noCache = require("../middleware/noCache");
 
-// ✅ Public routes
 router.post("/register", register);
 router.post("/login", login);
 router.post("/refresh", refresh);
-
-// ✅ Protected routes
-router.get("/profile", authenticateToken, noCache, (req, res) => {
-  res.json(req.user);
+router.get("/profile", authenticateToken, (req, res) => {
+  res.json({ message: "This is a protected route", user: req.user });
 });
-
-// 🚨 Originally public, now protected
-router.get("/user/:id", authenticateToken, noCache, getUserById);
+router.get("/user/:id", fetchUserByID);
 
 module.exports = router;

@@ -1,34 +1,23 @@
-// src/routes/adminNews.js
 const express = require("express");
 const router = express.Router();
-const {
-  createNews,
-  updateNews,
-  deleteNews,
-  uploadImage,
-  linkPreview,
-} = require("../controllers/newsController");
-const authenticateToken = require("../middleware/authMiddleware");
-const requireAdmin = require("../middleware/requireAdmin");
-const noCache = require("../middleware/noCache");
 const upload = require("../middleware/upload");
+const newsController = require("../controllers/newsController");
 
-// 🔒 All admin routes protected
-router.use(authenticateToken, requireAdmin, noCache);
+// ---------- Admin-only routes ----------
 
-// ✅ Upload image
-router.post("/upload", upload.single("image"), uploadImage);
+// Upload image
+router.post("/upload", upload.single("image"), newsController.uploadNewsImage);
 
-// ✅ Create news
-router.post("/", createNews);
+// External link preview (lightweight fetch + jsdom)
+router.post("/link-preview", newsController.getLinkPreview);
 
-// ✅ Update news
-router.put("/:id", updateNews);
+// Create news post
+router.post("/", newsController.createNews);
 
-// ✅ Delete news
-router.delete("/:id", deleteNews);
+// Update news post
+router.put("/:id", newsController.updateNews);
 
-// ✅ Link preview
-router.post("/link-preview", linkPreview);
+// Delete news post
+router.delete("/:id", newsController.deleteNews);
 
 module.exports = router;
