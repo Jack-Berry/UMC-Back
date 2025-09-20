@@ -1,12 +1,20 @@
 const express = require("express");
 const router = express.Router();
-const {
-  updateAvatar,
-  updateProfile,
-} = require("../controllers/userController");
+const userController = require("../controllers/userController");
 const authenticateToken = require("../middleware/authMiddleware");
 
-router.put("/:id/avatar", authenticateToken, updateAvatar);
-router.put("/:id", authenticateToken, updateProfile); // 👈 new
+// Avatar upload (with multer middleware)
+router.put(
+  "/:id/avatar",
+  authenticateToken,
+  userController.upload,
+  userController.uploadAvatar
+);
+
+// Profile update
+router.put("/:id", authenticateToken, userController.updateProfile);
+
+// Search users
+router.get("/search", authenticateToken, userController.searchUsers);
 
 module.exports = router;
