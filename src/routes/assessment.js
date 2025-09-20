@@ -1,7 +1,15 @@
 // src/routes/assessment.js
 const express = require("express");
 const { pool } = require("../db");
+const authenticateToken = require("../middleware/authMiddleware");
+
 const router = express.Router();
+
+// 🔒 Apply auth + disable caching to all assessment routes
+router.use(authenticateToken, (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
 
 /**
  * ✅ Submit or update an assessment
