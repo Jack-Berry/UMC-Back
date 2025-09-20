@@ -122,3 +122,24 @@ exports.updateProfile = async (req, res) => {
     res.status(500).json({ error: "Failed to update profile" });
   }
 };
+
+// 🔹 Search users by email (for friend requests)
+exports.searchUsers = async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    const result = await pool.query(
+      `SELECT id, name, email, avatar_url 
+       FROM users 
+       WHERE email ILIKE $1 
+       LIMIT 5`,
+      [email + "%"]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Search users error:", err);
+    res.status(500).json({ error: "Failed to search users" });
+  }
+};
