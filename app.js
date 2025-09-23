@@ -21,21 +21,21 @@ const messageRoutes = require("./src/routes/messageRoutes");
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
-const { initSocket } = require("./src/socket"); // ✅ socket.io bootstrap
+const { initSocket } = require("./src/socket");
 
 dotenv.config();
 
 const app = express();
 app.set("trust proxy", 1);
 
-// ✅ Rate limiter
+// Rate limiter
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 500,
   message: "Too many requests, please try again later.",
 });
 
-// ✅ Security + CORS
+// Security + CORS
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
@@ -44,11 +44,11 @@ const allowedOrigins = [
 ];
 
 const corsOptions = {
-  origin: (origin, callback) => {
+  origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, origin);
+      return callback(null, true);
     } else {
-      callback(new Error("Not allowed by CORS"));
+      return callback(new Error("Not allowed by CORS"));
     }
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
