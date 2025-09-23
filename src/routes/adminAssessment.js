@@ -40,34 +40,64 @@ function parseTsFromFilename(file) {
   )}:${hms.slice(2, 4)}:${hms.slice(4, 6)}Z`;
 }
 
-function generateResetSQL(rows) {
-  const header =
-    `DELETE FROM "public"."assessment_questions";\n\n` +
-    `INSERT INTO "public"."assessment_questions" ` +
-    `("id","assessment_type","category","text","version","active","parent_id","is_initial","is_advanced","sort_order","tags","updated_at") VALUES\n`;
+function generateResetSQL(questions, questionTags, tags) {
+  let sql = "";
 
-  const values = rows
-    .map((r) => {
-      const esc = (str) =>
-        str === null || str === undefined
-          ? "NULL"
-          : `'${String(str).replace(/'/g, "''")}'`;
-      const bool = (b, def = false) => (typeof b === "boolean" ? b : def);
-      const tags =
-        Array.isArray(r.tags) && r.tags.length > 0
-          ? `'${JSON.stringify(r.tags).replace(/'/g, "''")}'::jsonb`
-          : "'[]'::jsonb";
+  // 1. Clear tables in right order
+  sql += `DELETE FROM "public"."question_tags";\n`;
+  sql += `DELETE FROM "public"."tags";\n`;
+  sql += `DELETE FROM "public"."assessment_questions";\n\n`;
 
-      return `(${esc(r.id)},${esc(r.assessment_type)},${esc(r.category)},${esc(
-        r.text
-      )},${r.version || 1},${bool(r.active, true)},${esc(r.parent_id)},${bool(
-        r.is_initial,
-        false
-      )},${bool(r.is_advanced, false)},${r.sort_order ?? 0},${tags},NOW())`;
-    })
-    .join(",\n");
+  // 2. Insert assessment_questions
+  if (questions.length > 0) {
+    const qVals = questions
+      .map((r) => {
+        const esc = (str) =>
+          str === null || str === undefined
+            ? "NULL"
+            : `'${String(str).replace(/'/g, "''")}'`;
+        const bool = (b, def = false) => (typeof b === "boolean" ? b : def);
 
-  return header + values + ";\n";
+        return `(${esc(r.id)},${esc(r.assessment_type)},${esc(
+          r.category
+        )},${esc(r.text)},${r.version || 1},${bool(r.active, true)},${esc(
+          r.parent_id
+        )},${bool(r.is_initial, false)},${bool(r.is_advanced, false)},${
+          r.sort_order ?? 0
+        },NOW())`;
+      })
+      .join(",\n");
+
+    sql +=
+      `INSERT INTO "public"."assessment_questions" ` +
+      `("id","assessment_type","category","text","version","active","parent_id","is_initial","is_advanced","sort_order","updated_at") VALUES\n` +
+      qVals +
+      ";\n\n";
+  }
+
+  // 3. Insert tags
+  if (tags.length > 0) {
+    const tVals = tags
+      .map((t) => `(${t.id},'${t.name.replace(/'/g, "''")}')`)
+      .join(",\n");
+
+    sql +=
+      `INSERT INTO "public"."tags" ("id","name") VALUES\n` + tVals + ";\n\n";
+  }
+
+  // 4. Insert question_tags
+  if (questionTags.length > 0) {
+    const qtVals = questionTags
+      .map((qt) => `('${qt.question_id}',${qt.tag_id})`)
+      .join(",\n");
+
+    sql +=
+      `INSERT INTO "public"."question_tags" ("question_id","tag_id") VALUES\n` +
+      qtVals +
+      ";\n\n";
+  }
+
+  return sql;
 }
 
 // ---------- Categories ----------
@@ -102,28 +132,47 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   const { category, type, parent_id } = req.query;
   const params = [];
   const where = [];
+
   if (type) {
     params.push(type);
-    where.push(`assessment_type = $${params.length}`);
+    where.push(`q.assessment_type = $${params.length}`);
   }
   if (category) {
     params.push(category);
-    where.push(`category = $${params.length}`);
+    where.push(`q.category = $${params.length}`);
   }
   if (parent_id) {
     params.push(parent_id);
-    where.push(`parent_id = $${params.length}`);
+    where.push(`q.parent_id = $${params.length}`);
   } else {
-    where.push(`parent_id IS NULL`);
+    where.push(`q.parent_id IS NULL`);
   }
+
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
   try {
     const { rows } = await pool.query(
       `
-      SELECT id, assessment_type, category, text, parent_id, active, version, sort_order, tags
-      FROM assessment_questions
+      SELECT
+        q.id,
+        q.assessment_type,
+        q.category,
+        q.text,
+        q.parent_id,
+        q.active,
+        q.version,
+        q.sort_order,
+        COALESCE(
+          json_agg(json_build_object('id', t.id, 'name', t.name))
+          FILTER (WHERE t.id IS NOT NULL),
+          '[]'
+        ) AS tags
+      FROM assessment_questions q
+      LEFT JOIN question_tags qt ON qt.question_id = q.id
+      LEFT JOIN tags t ON t.id = qt.tag_id
       ${whereClause}
-      ORDER BY sort_order NULLS LAST, id
+      GROUP BY q.id
+      ORDER BY q.sort_order NULLS LAST, q.id
       `,
       params
     );
@@ -144,14 +193,32 @@ router.get(
     try {
       const { rows } = await pool.query(
         `
-        SELECT id, assessment_type, category, text, parent_id, active, version, sort_order, tags
-        FROM assessment_questions
-        WHERE id = $1
+        SELECT
+          q.id,
+          q.assessment_type,
+          q.category,
+          q.text,
+          q.parent_id,
+          q.active,
+          q.version,
+          q.sort_order,
+          COALESCE(
+            json_agg(json_build_object('id', t.id, 'name', t.name))
+            FILTER (WHERE t.id IS NOT NULL),
+            '[]'
+          ) AS tags
+        FROM assessment_questions q
+        LEFT JOIN question_tags qt ON qt.question_id = q.id
+        LEFT JOIN tags t ON t.id = qt.tag_id
+        WHERE q.id = $1
+        GROUP BY q.id
         `,
         [id]
       );
+
       if (!rows[0])
         return res.status(404).json({ error: "Question not found" });
+
       res.json(rows[0]);
     } catch (err) {
       console.error("Error fetching single question:", err);
@@ -170,43 +237,66 @@ router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
     version = 1,
     active = true,
     sort_order = null,
-    tags = [],
+    tags = [], // array of tag names
   } = req.body;
+
   if (!assessment_type || !text) {
     return res
       .status(400)
       .json({ error: "assessment_type and text are required" });
   }
+
+  const client = await pool.connect();
   try {
-    const client = await pool.connect();
-    try {
-      const id = await generateQuestionId(client, assessment_type, parent_id);
-      const { rows } = await client.query(
-        `
-        INSERT INTO assessment_questions
-          (id, assessment_type, category, text, parent_id, version, active, sort_order, tags)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        RETURNING *
-        `,
-        [
-          id,
-          assessment_type,
-          category || assessment_type,
-          text,
-          parent_id || null,
-          version,
-          active,
-          sort_order,
-          JSON.stringify(tags),
-        ]
+    await client.query("BEGIN");
+
+    const id = await generateQuestionId(client, assessment_type, parent_id);
+
+    const { rows } = await client.query(
+      `
+      INSERT INTO assessment_questions
+        (id, assessment_type, category, text, parent_id, version, active, sort_order)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      RETURNING *
+      `,
+      [
+        id,
+        assessment_type,
+        category || assessment_type,
+        text,
+        parent_id || null,
+        version,
+        active,
+        sort_order,
+      ]
+    );
+
+    // Insert tags into question_tags
+    for (const tagName of tags) {
+      const { rows: tagRows } = await client.query(
+        `INSERT INTO tags (name)
+         VALUES ($1)
+         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id`,
+        [tagName.trim().toLowerCase()]
       );
-      res.status(201).json(rows[0]);
-    } finally {
-      client.release();
+      const tagId = tagRows[0].id;
+      await client.query(
+        `INSERT INTO question_tags (question_id, tag_id)
+         VALUES ($1,$2)
+         ON CONFLICT DO NOTHING`,
+        [id, tagId]
+      );
     }
+
+    await client.query("COMMIT");
+    res.status(201).json(rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Error creating question:", err);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -219,37 +309,64 @@ router.put(
     const { id } = req.params;
     const { category, text, parent_id, version, active, sort_order, tags } =
       req.body;
+
+    const client = await pool.connect();
     try {
-      const { rows } = await pool.query(
+      await client.query("BEGIN");
+
+      const { rows } = await client.query(
         `
-      UPDATE assessment_questions
-      SET category   = COALESCE($1, category),
-          text       = COALESCE($2, text),
-          parent_id  = $3,
-          version    = COALESCE($4, version),
-          active     = COALESCE($5, active),
-          sort_order = COALESCE($6, sort_order),
-          tags       = COALESCE($7, tags)
-      WHERE id = $8
-      RETURNING *
-      `,
-        [
-          category,
-          text,
-          parent_id || null,
-          version,
-          active,
-          sort_order,
-          tags,
-          id,
-        ]
+        UPDATE assessment_questions
+        SET category   = COALESCE($1, category),
+            text       = COALESCE($2, text),
+            parent_id  = $3,
+            version    = COALESCE($4, version),
+            active     = COALESCE($5, active),
+            sort_order = COALESCE($6, sort_order)
+        WHERE id = $7
+        RETURNING *
+        `,
+        [category, text, parent_id || null, version, active, sort_order, id]
       );
-      if (!rows[0])
+
+      if (!rows[0]) {
+        await client.query("ROLLBACK");
         return res.status(404).json({ error: "Question not found" });
+      }
+
+      if (tags) {
+        // Clear existing tags
+        await client.query(`DELETE FROM question_tags WHERE question_id = $1`, [
+          id,
+        ]);
+
+        // Insert updated tags
+        for (const tagName of tags) {
+          const { rows: tagRows } = await client.query(
+            `INSERT INTO tags (name)
+             VALUES ($1)
+             ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+             RETURNING id`,
+            [tagName.trim().toLowerCase()]
+          );
+          const tagId = tagRows[0].id;
+          await client.query(
+            `INSERT INTO question_tags (question_id, tag_id)
+             VALUES ($1,$2)
+             ON CONFLICT DO NOTHING`,
+            [id, tagId]
+          );
+        }
+      }
+
+      await client.query("COMMIT");
       res.json(rows[0]);
     } catch (err) {
+      await client.query("ROLLBACK");
       console.error("Error updating question:", err);
       res.status(500).json({ error: "Server error" });
+    } finally {
+      client.release();
     }
   }
 );
@@ -293,20 +410,45 @@ router.patch(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+
       for (const q of questions) {
         await client.query(
           `
-        UPDATE assessment_questions
-        SET text = $1,
-            category = $2,
-            parent_id = $3,
-            sort_order = $4,
-            tags = $5
-        WHERE id = $6
-        `,
-          [q.text, q.category, q.parent_id || null, q.sort_order, q.tags, q.id]
+          UPDATE assessment_questions
+          SET text = $1,
+              category = $2,
+              parent_id = $3,
+              sort_order = $4
+          WHERE id = $5
+          `,
+          [q.text, q.category, q.parent_id || null, q.sort_order, q.id]
         );
+
+        if (q.tags) {
+          await client.query(
+            `DELETE FROM question_tags WHERE question_id = $1`,
+            [q.id]
+          );
+
+          for (const tagName of q.tags) {
+            const { rows: tagRows } = await client.query(
+              `INSERT INTO tags (name)
+               VALUES ($1)
+               ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+               RETURNING id`,
+              [tagName.trim().toLowerCase()]
+            );
+            const tagId = tagRows[0].id;
+            await client.query(
+              `INSERT INTO question_tags (question_id, tag_id)
+               VALUES ($1,$2)
+               ON CONFLICT DO NOTHING`,
+              [q.id, tagId]
+            );
+          }
+        }
       }
+
       await client.query("COMMIT");
       res.json({ success: true });
     } catch (err) {
@@ -422,13 +564,27 @@ router.post(
   requireAdmin,
   async (req, res) => {
     try {
-      const { rows } = await pool.query(
+      // Fetch questions
+      const { rows: questions } = await pool.query(
         `SELECT id, assessment_type, category, text, version, active,
-                parent_id, is_initial, is_advanced, sort_order, tags
+                parent_id, is_initial, is_advanced, sort_order
          FROM assessment_questions
          ORDER BY category, sort_order, id`
       );
-      const sql = generateResetSQL(rows);
+
+      // Fetch tags
+      const { rows: tags } = await pool.query(
+        `SELECT id, name FROM tags ORDER BY id`
+      );
+
+      // Fetch question_tags
+      const { rows: questionTags } = await pool.query(
+        `SELECT question_id, tag_id FROM question_tags ORDER BY question_id, tag_id`
+      );
+
+      // Generate SQL snapshot
+      const sql = generateResetSQL(questions, questionTags, tags);
+
       ensureDir();
       const ts = new Date()
         .toISOString()
@@ -437,21 +593,25 @@ router.post(
         .replace("T", "_");
       const filename = `reset_and_insert_assessment_questions_${ts}.sql`;
       const filepath = path.join(SNAPSHOT_DIR, filename);
+
       fs.writeFileSync(filepath, sql, "utf8");
+
       const createdAt =
         parseTsFromFilename(filename) || new Date().toISOString();
       const label = req.body?.label || fmtLabel(createdAt);
       const meta = { filename, label, createdAt };
+
       fs.writeFileSync(
         filepath.replace(".sql", ".json"),
         JSON.stringify(meta, null, 2),
         "utf8"
       );
       fs.writeFileSync(CURRENT_FILE, sql, "utf8");
+
       res.json({
         success: true,
         savedAs: filename,
-        rowCount: rows.length,
+        rowCount: questions.length,
         meta,
       });
     } catch (err) {
@@ -500,5 +660,66 @@ router.get("/versions", authenticateToken, requireAdmin, (req, res) => {
     res.status(500).json({ error: "Failed to list versions" });
   }
 });
+
+// ------------------- TAG MANAGEMENT -------------------
+
+// Get all tags
+router.get("/tags", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, name FROM tags ORDER BY name ASC"
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch tags" });
+  }
+});
+
+// Create a tag
+router.post("/tags", authenticateToken, requireAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+  try {
+    const result = await pool.query(
+      "INSERT INTO tags (name) VALUES ($1) RETURNING id, name",
+      [name.trim().toLowerCase()]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create tag" });
+  }
+});
+
+// Update a tag
+router.put("/tags/:id", authenticateToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+  try {
+    const result = await pool.query(
+      "UPDATE tags SET name=$1 WHERE id=$2 RETURNING id,name",
+      [name.trim().toLowerCase(), id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update tag" });
+  }
+});
+
+// Delete a tag
+router.delete(
+  "/tags/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const { id } = req.params;
+    try {
+      await pool.query("DELETE FROM tags WHERE id=$1", [id]);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete tag" });
+    }
+  }
+);
 
 module.exports = router;

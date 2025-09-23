@@ -13,7 +13,6 @@ router.use(authenticateToken);
  * POST /api/assessment/:type
  */
 router.post("/:type", async (req, res) => {
-  console.log("Incoming assessment submission:", req.params, req.body);
   const assessmentType = req.params.type;
   const { userId, answers } = req.body;
 
@@ -112,19 +111,29 @@ router.get("/categories", async (req, res) => {
 });
 
 /**
- * ✅ Get questions for a given assessment type
+ * ✅ Get questions for a given assessment type (return tags as [{id,name}])
  * GET /api/assessment/:type/questions
  */
 router.get("/:type/questions", async (req, res) => {
   const { type } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT id, category, text, version, active, parent_id, tags
-       FROM assessment_questions
-       WHERE assessment_type = $1 AND active = true
-       ORDER BY id`,
+      `SELECT
+        q.id, q.category, q.text, q.version, q.active, q.parent_id,
+        COALESCE(
+          json_agg(json_build_object('id', t.id, 'name', t.name))
+          FILTER (WHERE t.id IS NOT NULL),
+          '[]'
+        ) AS tags
+       FROM assessment_questions q
+       LEFT JOIN question_tags qt ON qt.question_id = q.id
+       LEFT JOIN tags t ON t.id = qt.tag_id
+       WHERE q.assessment_type = $1 AND q.active = true AND q.parent_id IS NULL
+       GROUP BY q.id
+       ORDER BY q.sort_order NULLS LAST, q.id`,
       [type]
     );
+
     if (rows.length === 0) {
       return res
         .status(404)
@@ -180,7 +189,7 @@ router.delete("/all/:userId", async (req, res) => {
 });
 
 /**
- * ✅ Wipe a single type
+ * ✅ Wipe only a specific type of answers
  * DELETE /api/assessment/:type/:userId
  */
 router.delete("/:type/:userId", async (req, res) => {
@@ -190,9 +199,9 @@ router.delete("/:type/:userId", async (req, res) => {
       `DELETE FROM user_assessment_answers WHERE user_id = $1 AND assessment_type = $2`,
       [userId, type]
     );
-    res.json({ success: true, message: `${type} assessment cleared` });
+    res.json({ success: true, message: "Assessment type wiped" });
   } catch (err) {
-    console.error("Wipe assessment error:", err);
+    console.error("Wipe assessment type error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
