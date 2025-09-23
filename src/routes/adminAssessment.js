@@ -14,9 +14,40 @@ const CURRENT_FILE = path.join(
   "reset_and_insert_assessment_questions.sql"
 );
 
-// Helper: generate SQL reset string from rows
+// ---------- helpers ----------
+function ensureDir() {
+  if (!fs.existsSync(SNAPSHOT_DIR))
+    fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+}
+
+function fmtLabel(dateIso) {
+  // Europe/London, en-GB style
+  const d = new Date(dateIso);
+  return `Saved on ${d.toLocaleString("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Europe/London",
+  })}`;
+}
+
+// From filename reset_and_insert_assessment_questions_YYYYMMDD_HHMMSS.sql
+function parseTsFromFilename(file) {
+  const m = file.match(/_(\d{8})_(\d{6})\.sql$/);
+  if (!m) return null;
+  const [_, ymd, hms] = m;
+  const iso = `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(
+    6,
+    8
+  )}T${hms.slice(0, 2)}:${hms.slice(2, 4)}:${hms.slice(4, 6)}Z`;
+  return iso;
+}
+
+// Build SQL reset script from rows
 function generateResetSQL(rows) {
-  const header = `DELETE FROM "public"."assessment_questions";\n\nINSERT INTO "public"."assessment_questions" ("id","assessment_type","category","text","version","active","parent_id","is_initial","is_advanced","sort_order","updated_at") VALUES\n`;
+  const header =
+    `DELETE FROM "public"."assessment_questions";\n\n` +
+    `INSERT INTO "public"."assessment_questions" ` +
+    `("id","assessment_type","category","text","version","active","parent_id","is_initial","is_advanced","sort_order","updated_at") VALUES\n`;
 
   const values = rows
     .map((r) => {
@@ -24,12 +55,14 @@ function generateResetSQL(rows) {
         str === null || str === undefined
           ? "NULL"
           : `'${String(str).replace(/'/g, "''")}'`;
+      const bool = (b, def = false) => (typeof b === "boolean" ? b : def);
 
       return `(${esc(r.id)},${esc(r.assessment_type)},${esc(r.category)},${esc(
         r.text
-      )},${r.version || 1},${r.active},${esc(r.parent_id)},${r.is_initial},${
-        r.is_advanced
-      },${r.sort_order ?? 0},NOW())`;
+      )},${r.version || 1},${bool(r.active, true)},${esc(r.parent_id)},${bool(
+        r.is_initial,
+        false
+      )},${bool(r.is_advanced, false)},${r.sort_order ?? 0},NOW())`;
     })
     .join(",\n");
 
@@ -301,7 +334,6 @@ router.delete(
   async (req, res) => {
     const { type } = req.params;
 
-    // optional safeguard: block deleting "initial"
     if (type === "initial") {
       return res
         .status(400)
@@ -359,13 +391,25 @@ router.post(
   async (req, res) => {
     const client = await pool.connect();
     try {
-      const latestFile =
-        req.body.filename ||
-        fs
+      ensureDir();
+
+      // allow either .sql or .json filename in body
+      let latestFile = req.body?.filename || null;
+
+      if (!latestFile) {
+        // pick the most recent .sql by name sort (timestamp in name)
+        latestFile = fs
           .readdirSync(SNAPSHOT_DIR)
-          .filter((f) => f.startsWith("reset_and_insert_assessment_questions"))
+          .filter(
+            (f) =>
+              f.startsWith("reset_and_insert_assessment_questions") &&
+              f.endsWith(".sql")
+          )
           .sort()
           .pop();
+      } else if (latestFile.endsWith(".json")) {
+        latestFile = latestFile.replace(/\.json$/, ".sql");
+      }
 
       if (!latestFile) {
         return res.status(404).json({ error: "No snapshot files found" });
@@ -389,7 +433,7 @@ router.post(
   }
 );
 
-// ---------- Save Current State (SQL snapshot) ----------
+// ---------- Save Current State (SQL snapshot + JSON metadata) ----------
 router.post(
   "/save-defaults",
   authenticateToken,
@@ -400,14 +444,11 @@ router.post(
         `SELECT id, assessment_type, category, text, version, active,
                 parent_id, is_initial, is_advanced, sort_order
          FROM assessment_questions
-         ORDER BY category, sort_order`
+         ORDER BY category, sort_order, id`
       );
 
       const sql = generateResetSQL(rows);
-
-      if (!fs.existsSync(SNAPSHOT_DIR)) {
-        fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
-      }
+      ensureDir();
 
       const ts = new Date()
         .toISOString()
@@ -418,13 +459,28 @@ router.post(
       const filename = `reset_and_insert_assessment_questions_${ts}.sql`;
       const filepath = path.join(SNAPSHOT_DIR, filename);
 
+      // write SQL
       fs.writeFileSync(filepath, sql, "utf8");
-      fs.writeFileSync(CURRENT_FILE, sql, "utf8"); // overwrite pointer
+
+      // write JSON metadata (label may be provided by client)
+      const createdAt =
+        parseTsFromFilename(filename) || new Date().toISOString();
+      const label = req.body?.label || fmtLabel(createdAt);
+      const meta = { filename, label, createdAt };
+      fs.writeFileSync(
+        filepath.replace(".sql", ".json"),
+        JSON.stringify(meta, null, 2),
+        "utf8"
+      );
+
+      // update pointer file to latest
+      fs.writeFileSync(CURRENT_FILE, sql, "utf8");
 
       res.json({
         success: true,
         savedAs: filename,
         rowCount: rows.length,
+        meta,
       });
     } catch (err) {
       console.error("Save defaults failed:", err);
@@ -433,17 +489,48 @@ router.post(
   }
 );
 
-// ---------- List Versions ----------
+// ---------- List Versions (returns metadata) ----------
 router.get("/versions", authenticateToken, requireAdmin, (req, res) => {
   try {
-    if (!fs.existsSync(SNAPSHOT_DIR)) {
-      return res.json([]);
-    }
-    const files = fs
+    ensureDir();
+
+    // prefer JSON metadata files
+    const metas = fs
       .readdirSync(SNAPSHOT_DIR)
       .filter((f) => f.startsWith("reset_and_insert_assessment_questions_"))
-      .sort();
-    res.json(files);
+      .reduce((acc, f) => {
+        if (f.endsWith(".json")) {
+          try {
+            const meta = JSON.parse(
+              fs.readFileSync(path.join(SNAPSHOT_DIR, f), "utf8")
+            );
+            if (meta && meta.filename) acc.push(meta);
+          } catch {
+            // ignore bad json
+          }
+        }
+        return acc;
+      }, []);
+
+    // fallback: any .sql without json → synthesize metadata
+    const sqls = fs
+      .readdirSync(SNAPSHOT_DIR)
+      .filter(
+        (f) =>
+          f.endsWith(".sql") &&
+          f.startsWith("reset_and_insert_assessment_questions_")
+      );
+
+    for (const f of sqls) {
+      const jsonPath = path.join(SNAPSHOT_DIR, f.replace(".sql", ".json"));
+      if (!fs.existsSync(jsonPath)) {
+        const createdAt = parseTsFromFilename(f) || new Date().toISOString();
+        metas.push({ filename: f, label: fmtLabel(createdAt), createdAt });
+      }
+    }
+
+    metas.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(metas);
   } catch (err) {
     console.error("List versions failed:", err);
     res.status(500).json({ error: "Failed to list versions" });
