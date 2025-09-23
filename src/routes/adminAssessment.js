@@ -1,15 +1,39 @@
 // src/routes/adminAssessment.js
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 const router = express.Router();
 const { pool } = require("../db");
 const authenticateToken = require("../middleware/authMiddleware");
 const requireAdmin = require("../middleware/requireAdmin");
 const { generateQuestionId } = require("../utils/generateQuestionId");
 
-// ---- Load assessmentData safely ----
-let assessmentData = require("../data/assessmentData");
-if (assessmentData.default) {
-  assessmentData = assessmentData.default;
+const SNAPSHOT_DIR = path.join(__dirname, "../../sql_snapshots");
+const CURRENT_FILE = path.join(
+  SNAPSHOT_DIR,
+  "reset_and_insert_assessment_questions.sql"
+);
+
+// Helper: generate SQL reset string from rows
+function generateResetSQL(rows) {
+  const header = `DELETE FROM "public"."assessment_questions";\n\nINSERT INTO "public"."assessment_questions" ("id","assessment_type","category","text","version","active","parent_id","is_initial","is_advanced","sort_order","updated_at") VALUES\n`;
+
+  const values = rows
+    .map((r) => {
+      const esc = (str) =>
+        str === null || str === undefined
+          ? "NULL"
+          : `'${String(str).replace(/'/g, "''")}'`;
+
+      return `(${esc(r.id)},${esc(r.assessment_type)},${esc(r.category)},${esc(
+        r.text
+      )},${r.version || 1},${r.active},${esc(r.parent_id)},${r.is_initial},${
+        r.is_advanced
+      },${r.sort_order ?? 0},NOW())`;
+    })
+    .join(",\n");
+
+  return header + values + ";\n";
 }
 
 // ---------- Categories ----------
@@ -232,66 +256,6 @@ router.delete(
   }
 );
 
-// ---------- Restore Defaults ----------
-router.post("/restore-defaults", async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query("DELETE FROM assessment_questions");
-
-    const typeFor = (id, defaultType) =>
-      id.startsWith("init-") ? "initial" : defaultType;
-
-    for (const category of assessmentData) {
-      for (let i = 0; i < category.questions.length; i++) {
-        const q = category.questions[i];
-
-        await client.query(
-          `INSERT INTO assessment_questions
-            (id, assessment_type, category, text, parent_id, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            q.id,
-            typeFor(q.id, category.assessment_type),
-            category.category,
-            q.text,
-            q.parent_id || null,
-            i,
-          ]
-        );
-
-        if (q.followUps?.questions) {
-          for (let j = 0; j < q.followUps.questions.length; j++) {
-            const fq = q.followUps.questions[j];
-            await client.query(
-              `INSERT INTO assessment_questions
-                (id, assessment_type, category, text, parent_id, sort_order)
-               VALUES ($1, $2, $3, $4, $5, $6)`,
-              [
-                fq.id,
-                typeFor(fq.id, category.assessment_type),
-                category.category,
-                fq.text,
-                q.id,
-                j,
-              ]
-            );
-          }
-        }
-      }
-    }
-
-    await client.query("COMMIT");
-    res.json({ success: true, restored: true });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("Error restoring defaults:", err);
-    res.status(500).json({ error: "Failed to restore defaults" });
-  } finally {
-    client.release();
-  }
-});
-
 // ---------- Bulk Save ----------
 router.patch(
   "/questions/bulk",
@@ -386,5 +350,104 @@ router.patch(
     }
   }
 );
+
+// ---------- Restore Defaults (SQL-based) ----------
+router.post(
+  "/restore-defaults",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const latestFile =
+        req.body.filename ||
+        fs
+          .readdirSync(SNAPSHOT_DIR)
+          .filter((f) => f.startsWith("reset_and_insert_assessment_questions"))
+          .sort()
+          .pop();
+
+      if (!latestFile) {
+        return res.status(404).json({ error: "No snapshot files found" });
+      }
+
+      const filePath = path.join(SNAPSHOT_DIR, latestFile);
+      const sql = fs.readFileSync(filePath, "utf8");
+
+      await client.query("BEGIN");
+      await client.query(sql);
+      await client.query("COMMIT");
+
+      res.json({ success: true, restoredVersion: latestFile });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("Restore defaults failed:", err);
+      res.status(500).json({ error: "Failed to restore defaults" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ---------- Save Current State (SQL snapshot) ----------
+router.post(
+  "/save-defaults",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, assessment_type, category, text, version, active,
+                parent_id, is_initial, is_advanced, sort_order
+         FROM assessment_questions
+         ORDER BY category, sort_order`
+      );
+
+      const sql = generateResetSQL(rows);
+
+      if (!fs.existsSync(SNAPSHOT_DIR)) {
+        fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+      }
+
+      const ts = new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace(/\..+/, "")
+        .replace("T", "_");
+
+      const filename = `reset_and_insert_assessment_questions_${ts}.sql`;
+      const filepath = path.join(SNAPSHOT_DIR, filename);
+
+      fs.writeFileSync(filepath, sql, "utf8");
+      fs.writeFileSync(CURRENT_FILE, sql, "utf8"); // overwrite pointer
+
+      res.json({
+        success: true,
+        savedAs: filename,
+        rowCount: rows.length,
+      });
+    } catch (err) {
+      console.error("Save defaults failed:", err);
+      res.status(500).json({ error: "Failed to save defaults" });
+    }
+  }
+);
+
+// ---------- List Versions ----------
+router.get("/versions", authenticateToken, requireAdmin, (req, res) => {
+  try {
+    if (!fs.existsSync(SNAPSHOT_DIR)) {
+      return res.json([]);
+    }
+    const files = fs
+      .readdirSync(SNAPSHOT_DIR)
+      .filter((f) => f.startsWith("reset_and_insert_assessment_questions_"))
+      .sort();
+    res.json(files);
+  } catch (err) {
+    console.error("List versions failed:", err);
+    res.status(500).json({ error: "Failed to list versions" });
+  }
+});
 
 module.exports = router;
