@@ -83,20 +83,7 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 // ✅ Serve uploads publicly
 app.use(
   "/uploads",
-  (req, res, next) => {
-    const origin = req.headers.origin;
-    if (!origin || allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin || "*");
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    }
-    res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization"
-    );
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    next();
-  },
+  cors(corsOptions), // use same CORS logic as API
   express.static(path.join(__dirname, "uploads"), {
     setHeaders: (res, filePath) => {
       const ext = path.extname(filePath).toLowerCase();

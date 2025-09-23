@@ -5,11 +5,8 @@ const authenticateToken = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-// 🔒 Apply auth + disable caching to all assessment routes
-router.use(authenticateToken, (req, res, next) => {
-  res.setHeader("Cache-Control", "no-store");
-  next();
-});
+// 🔒 Apply auth to all assessment routes
+router.use(authenticateToken);
 
 /**
  * ✅ Submit or update an assessment
