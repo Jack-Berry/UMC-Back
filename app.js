@@ -28,6 +28,15 @@ dotenv.config();
 const app = express();
 app.set("trust proxy", 1);
 
+// ✅ Disable ETag (no 304s, always fresh response with headers)
+app.disable("etag");
+
+// ✅ Force no caching for all API responses
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
 // Rate limiter
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -46,14 +55,14 @@ const allowedOrigins = [
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
+      return callback(null, true); // ✅ reflect origin
     } else {
       return callback(new Error("Not allowed by CORS"));
     }
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
+  credentials: true, // ✅ allow credentials
   optionsSuccessStatus: 204,
 };
 
