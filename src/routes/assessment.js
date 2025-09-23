@@ -119,7 +119,7 @@ router.get("/:type/questions", async (req, res) => {
   const { type } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT id, category, text, version, active, parent_id
+      `SELECT id, category, text, version, active, parent_id, tags
        FROM assessment_questions
        WHERE assessment_type = $1 AND active = true
        ORDER BY id`,

@@ -16,12 +16,12 @@ const CURRENT_FILE = path.join(
 
 // ---------- helpers ----------
 function ensureDir() {
-  if (!fs.existsSync(SNAPSHOT_DIR))
+  if (!fs.existsSync(SNAPSHOT_DIR)) {
     fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+  }
 }
 
 function fmtLabel(dateIso) {
-  // Europe/London, en-GB style
   const d = new Date(dateIso);
   return `Saved on ${d.toLocaleString("en-GB", {
     dateStyle: "medium",
@@ -30,24 +30,21 @@ function fmtLabel(dateIso) {
   })}`;
 }
 
-// From filename reset_and_insert_assessment_questions_YYYYMMDD_HHMMSS.sql
 function parseTsFromFilename(file) {
   const m = file.match(/_(\d{8})_(\d{6})\.sql$/);
   if (!m) return null;
   const [_, ymd, hms] = m;
-  const iso = `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(
-    6,
-    8
-  )}T${hms.slice(0, 2)}:${hms.slice(2, 4)}:${hms.slice(4, 6)}Z`;
-  return iso;
+  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}T${hms.slice(
+    0,
+    2
+  )}:${hms.slice(2, 4)}:${hms.slice(4, 6)}Z`;
 }
 
-// Build SQL reset script from rows
 function generateResetSQL(rows) {
   const header =
     `DELETE FROM "public"."assessment_questions";\n\n` +
     `INSERT INTO "public"."assessment_questions" ` +
-    `("id","assessment_type","category","text","version","active","parent_id","is_initial","is_advanced","sort_order","updated_at") VALUES\n`;
+    `("id","assessment_type","category","text","version","active","parent_id","is_initial","is_advanced","sort_order","tags","updated_at") VALUES\n`;
 
   const values = rows
     .map((r) => {
@@ -56,13 +53,17 @@ function generateResetSQL(rows) {
           ? "NULL"
           : `'${String(str).replace(/'/g, "''")}'`;
       const bool = (b, def = false) => (typeof b === "boolean" ? b : def);
+      const tags =
+        Array.isArray(r.tags) && r.tags.length > 0
+          ? `'${JSON.stringify(r.tags).replace(/'/g, "''")}'::jsonb`
+          : "'[]'::jsonb";
 
       return `(${esc(r.id)},${esc(r.assessment_type)},${esc(r.category)},${esc(
         r.text
       )},${r.version || 1},${bool(r.active, true)},${esc(r.parent_id)},${bool(
         r.is_initial,
         false
-      )},${bool(r.is_advanced, false)},${r.sort_order ?? 0},NOW())`;
+      )},${bool(r.is_advanced, false)},${r.sort_order ?? 0},${tags},NOW())`;
     })
     .join(",\n");
 
@@ -75,12 +76,10 @@ router.get("/categories", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const params = [];
     let where = "";
-
     if (type) {
       params.push(type);
       where = `WHERE assessment_type = $1`;
     }
-
     const { rows } = await pool.query(
       `
       SELECT assessment_type, MIN(category) AS category
@@ -91,7 +90,6 @@ router.get("/categories", authenticateToken, requireAdmin, async (req, res) => {
       `,
       params
     );
-
     res.json(rows);
   } catch (err) {
     console.error("Error fetching categories:", err);
@@ -104,7 +102,6 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   const { category, type, parent_id } = req.query;
   const params = [];
   const where = [];
-
   if (type) {
     params.push(type);
     where.push(`assessment_type = $${params.length}`);
@@ -119,13 +116,11 @@ router.get("/questions", authenticateToken, requireAdmin, async (req, res) => {
   } else {
     where.push(`parent_id IS NULL`);
   }
-
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
-
   try {
     const { rows } = await pool.query(
       `
-      SELECT id, assessment_type, category, text, parent_id, active, version, sort_order
+      SELECT id, assessment_type, category, text, parent_id, active, version, sort_order, tags
       FROM assessment_questions
       ${whereClause}
       ORDER BY sort_order NULLS LAST, id
@@ -149,17 +144,14 @@ router.get(
     try {
       const { rows } = await pool.query(
         `
-        SELECT id, assessment_type, category, text, parent_id, active, version, sort_order
+        SELECT id, assessment_type, category, text, parent_id, active, version, sort_order, tags
         FROM assessment_questions
         WHERE id = $1
         `,
         [id]
       );
-
-      if (!rows[0]) {
+      if (!rows[0])
         return res.status(404).json({ error: "Question not found" });
-      }
-
       res.json(rows[0]);
     } catch (err) {
       console.error("Error fetching single question:", err);
@@ -178,24 +170,22 @@ router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
     version = 1,
     active = true,
     sort_order = null,
+    tags = [],
   } = req.body;
-
   if (!assessment_type || !text) {
     return res
       .status(400)
       .json({ error: "assessment_type and text are required" });
   }
-
   try {
     const client = await pool.connect();
     try {
       const id = await generateQuestionId(client, assessment_type, parent_id);
-
       const { rows } = await client.query(
         `
         INSERT INTO assessment_questions
-          (id, assessment_type, category, text, parent_id, version, active, sort_order)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          (id, assessment_type, category, text, parent_id, version, active, sort_order, tags)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
         RETURNING *
         `,
         [
@@ -207,9 +197,9 @@ router.post("/questions", authenticateToken, requireAdmin, async (req, res) => {
           version,
           active,
           sort_order,
+          JSON.stringify(tags),
         ]
       );
-
       res.status(201).json(rows[0]);
     } finally {
       client.release();
@@ -227,8 +217,8 @@ router.put(
   requireAdmin,
   async (req, res) => {
     const { id } = req.params;
-    const { category, text, parent_id, version, active, sort_order } = req.body;
-
+    const { category, text, parent_id, version, active, sort_order, tags } =
+      req.body;
     try {
       const { rows } = await pool.query(
         `
@@ -238,17 +228,24 @@ router.put(
           parent_id  = $3,
           version    = COALESCE($4, version),
           active     = COALESCE($5, active),
-          sort_order = COALESCE($6, sort_order)
-      WHERE id = $7
+          sort_order = COALESCE($6, sort_order),
+          tags       = COALESCE($7, tags)
+      WHERE id = $8
       RETURNING *
       `,
-        [category, text, parent_id || null, version, active, sort_order, id]
+        [
+          category,
+          text,
+          parent_id || null,
+          version,
+          active,
+          sort_order,
+          tags,
+          id,
+        ]
       );
-
-      if (!rows[0]) {
+      if (!rows[0])
         return res.status(404).json({ error: "Question not found" });
-      }
-
       res.json(rows[0]);
     } catch (err) {
       console.error("Error updating question:", err);
@@ -275,11 +272,8 @@ router.delete(
         [id]
       );
       await pool.query("COMMIT");
-
-      if (!rowCount) {
+      if (!rowCount)
         return res.status(404).json({ error: "Question not found" });
-      }
-
       res.json({ success: true, id });
     } catch (err) {
       await pool.query("ROLLBACK");
@@ -299,7 +293,6 @@ router.patch(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-
       for (const q of questions) {
         await client.query(
           `
@@ -307,13 +300,13 @@ router.patch(
         SET text = $1,
             category = $2,
             parent_id = $3,
-            sort_order = $4
-        WHERE id = $5
+            sort_order = $4,
+            tags = $5
+        WHERE id = $6
         `,
-          [q.text, q.category, q.parent_id || null, q.sort_order, q.id]
+          [q.text, q.category, q.parent_id || null, q.sort_order, q.tags, q.id]
         );
       }
-
       await client.query("COMMIT");
       res.json({ success: true });
     } catch (err) {
@@ -333,21 +326,18 @@ router.delete(
   requireAdmin,
   async (req, res) => {
     const { type } = req.params;
-
     if (type === "initial") {
       return res
         .status(400)
         .json({ error: "Cannot delete initial assessment" });
     }
-
     try {
       const { rowCount } = await pool.query(
         "DELETE FROM assessment_questions WHERE assessment_type = $1",
         [type]
       );
-      if (!rowCount) {
+      if (!rowCount)
         return res.status(404).json({ error: "Assessment not found" });
-      }
       res.json({ success: true, deleted: rowCount });
     } catch (err) {
       console.error("Error deleting assessment type:", err);
@@ -383,7 +373,7 @@ router.patch(
   }
 );
 
-// ---------- Restore Defaults (SQL-based) ----------
+// ---------- Restore Defaults ----------
 router.post(
   "/restore-defaults",
   authenticateToken,
@@ -392,12 +382,8 @@ router.post(
     const client = await pool.connect();
     try {
       ensureDir();
-
-      // allow either .sql or .json filename in body
       let latestFile = req.body?.filename || null;
-
       if (!latestFile) {
-        // pick the most recent .sql by name sort (timestamp in name)
         latestFile = fs
           .readdirSync(SNAPSHOT_DIR)
           .filter(
@@ -410,18 +396,14 @@ router.post(
       } else if (latestFile.endsWith(".json")) {
         latestFile = latestFile.replace(/\.json$/, ".sql");
       }
-
       if (!latestFile) {
         return res.status(404).json({ error: "No snapshot files found" });
       }
-
       const filePath = path.join(SNAPSHOT_DIR, latestFile);
       const sql = fs.readFileSync(filePath, "utf8");
-
       await client.query("BEGIN");
       await client.query(sql);
       await client.query("COMMIT");
-
       res.json({ success: true, restoredVersion: latestFile });
     } catch (err) {
       await client.query("ROLLBACK");
@@ -433,7 +415,7 @@ router.post(
   }
 );
 
-// ---------- Save Current State (SQL snapshot + JSON metadata) ----------
+// ---------- Save Current State ----------
 router.post(
   "/save-defaults",
   authenticateToken,
@@ -442,27 +424,20 @@ router.post(
     try {
       const { rows } = await pool.query(
         `SELECT id, assessment_type, category, text, version, active,
-                parent_id, is_initial, is_advanced, sort_order
+                parent_id, is_initial, is_advanced, sort_order, tags
          FROM assessment_questions
          ORDER BY category, sort_order, id`
       );
-
       const sql = generateResetSQL(rows);
       ensureDir();
-
       const ts = new Date()
         .toISOString()
         .replace(/[-:]/g, "")
         .replace(/\..+/, "")
         .replace("T", "_");
-
       const filename = `reset_and_insert_assessment_questions_${ts}.sql`;
       const filepath = path.join(SNAPSHOT_DIR, filename);
-
-      // write SQL
       fs.writeFileSync(filepath, sql, "utf8");
-
-      // write JSON metadata (label may be provided by client)
       const createdAt =
         parseTsFromFilename(filename) || new Date().toISOString();
       const label = req.body?.label || fmtLabel(createdAt);
@@ -472,10 +447,7 @@ router.post(
         JSON.stringify(meta, null, 2),
         "utf8"
       );
-
-      // update pointer file to latest
       fs.writeFileSync(CURRENT_FILE, sql, "utf8");
-
       res.json({
         success: true,
         savedAs: filename,
@@ -489,12 +461,10 @@ router.post(
   }
 );
 
-// ---------- List Versions (returns metadata) ----------
+// ---------- List Versions ----------
 router.get("/versions", authenticateToken, requireAdmin, (req, res) => {
   try {
     ensureDir();
-
-    // prefer JSON metadata files
     const metas = fs
       .readdirSync(SNAPSHOT_DIR)
       .filter((f) => f.startsWith("reset_and_insert_assessment_questions_"))
@@ -505,14 +475,10 @@ router.get("/versions", authenticateToken, requireAdmin, (req, res) => {
               fs.readFileSync(path.join(SNAPSHOT_DIR, f), "utf8")
             );
             if (meta && meta.filename) acc.push(meta);
-          } catch {
-            // ignore bad json
-          }
+          } catch {}
         }
         return acc;
       }, []);
-
-    // fallback: any .sql without json → synthesize metadata
     const sqls = fs
       .readdirSync(SNAPSHOT_DIR)
       .filter(
@@ -520,7 +486,6 @@ router.get("/versions", authenticateToken, requireAdmin, (req, res) => {
           f.endsWith(".sql") &&
           f.startsWith("reset_and_insert_assessment_questions_")
       );
-
     for (const f of sqls) {
       const jsonPath = path.join(SNAPSHOT_DIR, f.replace(".sql", ".json"));
       if (!fs.existsSync(jsonPath)) {
@@ -528,7 +493,6 @@ router.get("/versions", authenticateToken, requireAdmin, (req, res) => {
         metas.push({ filename: f, label: fmtLabel(createdAt), createdAt });
       }
     }
-
     metas.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     res.json(metas);
   } catch (err) {
