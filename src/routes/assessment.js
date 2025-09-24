@@ -119,7 +119,12 @@ router.get("/:type/questions", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT
-        q.id, q.category, q.text, q.version, q.active, q.parent_id,
+        q.id,
+        q.category,
+        q.text,
+        q.version,
+        q.active,
+        q.parent_id,
         COALESCE(
           json_agg(json_build_object('id', t.id, 'name', t.name))
           FILTER (WHERE t.id IS NOT NULL),
@@ -128,7 +133,8 @@ router.get("/:type/questions", async (req, res) => {
        FROM assessment_questions q
        LEFT JOIN question_tags qt ON qt.question_id = q.id
        LEFT JOIN tags t ON t.id = qt.tag_id
-       WHERE q.assessment_type = $1 AND q.active = true AND q.parent_id IS NULL
+       WHERE q.assessment_type = $1
+         AND q.active = true
        GROUP BY q.id
        ORDER BY q.sort_order NULLS LAST, q.id`,
       [type]
@@ -139,6 +145,7 @@ router.get("/:type/questions", async (req, res) => {
         .status(404)
         .json({ error: `No questions found for type: ${type}` });
     }
+
     res.json({ assessmentType: type, questions: rows });
   } catch (err) {
     console.error("Fetch questions error:", err);
