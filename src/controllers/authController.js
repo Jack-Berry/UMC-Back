@@ -30,6 +30,15 @@ function sanitizeUser(user) {
     avatar_url: user.avatar_url,
     has_completed_assessment: user.has_completed_assessment,
     is_admin: user.is_admin,
+    profile_completion: user.profile_completion,
+    useful_at: user.useful_at,
+    useless_at: user.useless_at,
+    location: user.location,
+    show_location: user.show_location,
+    lat: user.lat,
+    lng: user.lng,
+    region: user.region,
+    created_at: user.created_at, // nice to keep for "Member since"
   };
 }
 
