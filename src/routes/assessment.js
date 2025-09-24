@@ -154,20 +154,41 @@ router.get("/:type/questions", async (req, res) => {
 });
 
 /**
- * ✅ Get a user’s submitted answers for a type
+ * ✅ Get a user’s submitted answers for a type (with tags)
  * GET /api/assessment/:type/:userId
  */
 router.get("/:type/:userId", async (req, res) => {
   const { type, userId } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT question_id, question_text, category, score, is_followup, updated_at
-       FROM user_assessment_answers
-       WHERE user_id = $1 AND assessment_type = $2
-       ORDER BY category, question_id`,
+      `SELECT
+         a.question_id,
+         a.question_text,
+         a.category,
+         a.score,
+         a.is_followup,
+         a.updated_at,
+         COALESCE(
+           json_agg(json_build_object('id', t.id, 'name', t.name))
+           FILTER (WHERE t.id IS NOT NULL),
+           '[]'
+         ) AS tags
+       FROM user_assessment_answers a
+       LEFT JOIN assessment_questions q ON q.id = a.question_id
+       LEFT JOIN question_tags qt ON qt.question_id = q.id
+       LEFT JOIN tags t ON t.id = qt.tag_id
+       WHERE a.user_id = $1
+         AND a.assessment_type = $2
+       GROUP BY a.question_id, a.question_text, a.category, a.score, a.is_followup, a.updated_at
+       ORDER BY a.category, a.question_id`,
       [userId, type]
     );
-    res.json({ assessmentType: type, userId: Number(userId), answers: rows });
+
+    res.json({
+      assessmentType: type,
+      userId: Number(userId),
+      answers: rows,
+    });
   } catch (err) {
     console.error("Fetch assessment error:", err);
     res.status(500).json({ error: "Database error" });
