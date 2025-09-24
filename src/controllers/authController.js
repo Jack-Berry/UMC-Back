@@ -27,6 +27,7 @@ function sanitizeUser(user) {
     id: user.id,
     name: user.name,
     email: user.email,
+    avatar_url: user.avatar_url,
     has_completed_assessment: user.has_completed_assessment,
     is_admin: user.is_admin,
   };
