@@ -18,7 +18,7 @@ const adminNewsRouter = require("./src/routes/adminNews");
 const friendRoutes = require("./src/routes/friendRoutes");
 const messageRoutes = require("./src/routes/messageRoutes");
 const matchRoutes = require("./src/routes/matchesRoutes");
-const tagsRoutes = require("./routes/tagsRoutes");
+const tagsRoutes = require("./src/routes/tagsRoutes");
 
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
