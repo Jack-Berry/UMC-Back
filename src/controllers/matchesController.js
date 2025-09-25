@@ -9,7 +9,7 @@ const { pool } = require("../db");
 async function getMatches(req, res) {
   const userId = req.user.id;
   const distanceKm = parseInt(req.query.distanceKm || "50", 10);
-  const minScore = Number(req.query.minScore) || 80; // ✅ ensure numeric
+  const minScore = Number(req.query.minScore) || 80;
 
   try {
     // 1) Current user

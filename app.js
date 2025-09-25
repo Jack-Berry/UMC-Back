@@ -18,6 +18,7 @@ const adminNewsRouter = require("./src/routes/adminNews");
 const friendRoutes = require("./src/routes/friendRoutes");
 const messageRoutes = require("./src/routes/messageRoutes");
 const matchRoutes = require("./src/routes/matchesRoutes");
+const tagsRoutes = require("./routes/tagsRoutes");
 
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
@@ -115,6 +116,7 @@ app.use("/api/news", newsRoutes);
 app.use("/api/friends", friendRoutes);
 app.use("/api/msg", messageRoutes);
 app.use("/api/matches", matchRoutes);
+app.use("/api/tags", tagsRoutes);
 
 // ---------- Admin routes ----------
 app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
