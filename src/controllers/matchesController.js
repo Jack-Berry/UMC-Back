@@ -1,3 +1,4 @@
+// src/controllers/matchesController.js
 const { pool } = require("../db");
 
 /**
@@ -27,7 +28,7 @@ async function getMatches(req, res) {
       return res.status(400).json({ error: "User has no location set" });
     }
 
-    // 2) Candidates within distance using Haversine (no PostGIS required)
+    // 2) Candidates within distance using Haversine (Earth radius = 6371km)
     const { rows: candidates } = await pool.query(
       `SELECT *
        FROM (
@@ -118,7 +119,7 @@ async function searchMatchesByTag(req, res) {
   const userId = req.user.id;
   const { tag } = req.query;
   const distanceKm = parseInt(req.query.distanceKm || "50", 10);
-  const minScore = Number(req.query.minScore) || 80; // ✅ ensure numeric
+  const minScore = Number(req.query.minScore) || 0; // allow wider
 
   if (!tag) return res.status(400).json({ error: "Missing ?tag= parameter" });
 
@@ -155,17 +156,16 @@ async function searchMatchesByTag(req, res) {
       [userId, me.lat, me.lng, distanceKm]
     );
 
-    // 3) Filter by tag complement
+    // 3) Filter by tag presence
     let matches = candidates
       .map((u) => {
         const theirTags = u.tag_scores || {};
         const myTags = me.tag_scores || {};
+
         const myScore = Number(myTags[tag] || 0);
         const theirScore = Number(theirTags[tag] || 0);
 
-        const matchScore = theirScore > 70 && myScore < 40 ? 100 : 0; // arbitrary strong weight
-
-        if (matchScore >= minScore) {
+        if (theirScore > 70) {
           return {
             id: u.id,
             name: u.name,
@@ -175,15 +175,12 @@ async function searchMatchesByTag(req, res) {
             myScore,
             theirScore,
             distanceKm: Number(u.distance_km?.toFixed(1) || 0),
-            matchScore,
           };
         }
         return null;
       })
       .filter(Boolean)
-      .sort(
-        (a, b) => b.matchScore - a.matchScore || b.theirScore - a.theirScore
-      );
+      .sort((a, b) => b.theirScore - a.theirScore);
 
     return res.json({ matches });
   } catch (err) {
