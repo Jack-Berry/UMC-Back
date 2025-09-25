@@ -2,6 +2,7 @@
 const express = require("express");
 const { pool } = require("../db");
 const authenticateToken = require("../middleware/authMiddleware");
+const { updateUserScores } = require("../utils/scoreAggregator");
 
 const router = express.Router();
 
@@ -16,6 +17,7 @@ router.post("/:type", async (req, res) => {
   const assessmentType = req.params.type;
   const { userId, answers } = req.body;
 
+  // 🔹 Validate request body
   if (!userId || !assessmentType || !Array.isArray(answers)) {
     return res.status(400).json({
       error: "Missing required data: userId, assessmentType, answers[]",
@@ -25,6 +27,7 @@ router.post("/:type", async (req, res) => {
     return res.status(400).json({ error: "answers[] cannot be empty" });
   }
 
+  // 🔹 Validate each answer
   for (const [i, a] of answers.entries()) {
     if (!a) return res.status(400).json({ error: `answers[${i}] is empty` });
 
@@ -77,14 +80,23 @@ router.post("/:type", async (req, res) => {
       );
 
       await client.query("COMMIT");
-      res.json({ success: true });
     } catch (err) {
       await client.query("ROLLBACK");
       console.error("Assessment insert error:", err);
-      res.status(500).json({ error: "Database error" });
+      return res.status(500).json({ error: "Database error" });
     } finally {
       client.release();
     }
+
+    // 🔹 Now recompute scores for this user
+    try {
+      await updateUserScores(userId);
+    } catch (err) {
+      // Log but don’t block the response — answers are still saved
+      console.error("Score update error:", err);
+    }
+
+    res.json({ success: true });
   } catch (err) {
     console.error("Pool error:", err);
     res.status(500).json({ error: "Server error" });

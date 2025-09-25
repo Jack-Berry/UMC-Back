@@ -38,6 +38,8 @@ function sanitizeUser(user) {
     lat: user.lat,
     lng: user.lng,
     region: user.region,
+    category_scores: user.category_scores,
+    tag_scores: user.tag_scores,
     created_at: user.created_at, // nice to keep for "Member since"
   };
 }
