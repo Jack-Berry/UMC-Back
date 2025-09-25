@@ -1,4 +1,6 @@
+// app.js
 const express = require("express");
+const http = require("http"); // ✅ needed for socket.io
 const helmet = require("helmet");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -13,25 +15,38 @@ const adminAssessmentRouter = require("./src/routes/adminAssessment");
 const eventRoutes = require("./src/routes/eventRoutes");
 const newsRoutes = require("./src/routes/newsRoutes");
 const adminNewsRouter = require("./src/routes/adminNews");
-const friendRoutes = require("./src/routes/friendRoutes"); // ✅ new
+const friendRoutes = require("./src/routes/friendRoutes");
+const messageRoutes = require("./src/routes/messageRoutes");
+const matchRoutes = require("./src/routes/matchesRoutes");
+const tagsRoutes = require("./src/routes/tagsRoutes");
 
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
 const requireAdmin = require("./src/middleware/requireAdmin");
+const { initSocket } = require("./src/socket");
 
 dotenv.config();
 
 const app = express();
 app.set("trust proxy", 1);
 
-// ✅ Rate limiter
+// ✅ Disable ETag (no 304s, always fresh response with headers)
+app.disable("etag");
+
+// ✅ Force no caching for all API responses
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
+// Rate limiter
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 500,
   message: "Too many requests, please try again later.",
 });
 
-// ✅ Security + CORS
+// Security + CORS
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
@@ -40,16 +55,16 @@ const allowedOrigins = [
 ];
 
 const corsOptions = {
-  origin: (origin, callback) => {
+  origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, origin);
+      return callback(null, true); // ✅ reflect origin
     } else {
-      callback(new Error("Not allowed by CORS"));
+      return callback(new Error("Not allowed by CORS"));
     }
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
+  credentials: true, // ✅ allow credentials
   optionsSuccessStatus: 204,
 };
 
@@ -60,49 +75,8 @@ app.use(
   })
 );
 
-// Apply CORS first
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
-
-// ✅ Force credentials header globally
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Credentials", "true");
-  next();
-});
-
-// ✅ Debug logging (non-production only)
-if (process.env.NODE_ENV !== "production") {
-  app.use((req, res, next) => {
-    if (req.method === "OPTIONS") {
-      console.log("🔍 Preflight Request:", {
-        origin: req.headers.origin,
-        path: req.path,
-        reqHeaders: req.headers["access-control-request-headers"],
-        reqMethod: req.headers["access-control-request-method"],
-      });
-    }
-    next();
-  });
-
-  app.use((req, res, next) => {
-    const _setHeader = res.setHeader.bind(res);
-    res.setHeader = (name, value) => {
-      if (name.toLowerCase().startsWith("access-control-")) {
-        console.log(`🛡️ CORS Header: ${name} = ${value}`);
-      }
-      _setHeader(name, value);
-    };
-    next();
-  });
-
-  app.get("/api/debug-cors", (req, res) => {
-    res.json({
-      receivedOrigin: req.headers.origin,
-      receivedAuth: req.headers.authorization ? "present" : "missing",
-      method: req.method,
-    });
-  });
-}
 
 // ✅ Body parsing
 app.use(express.json({ limit: "10mb" }));
@@ -111,20 +85,7 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 // ✅ Serve uploads publicly
 app.use(
   "/uploads",
-  (req, res, next) => {
-    const origin = req.headers.origin;
-    if (!origin || allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin || "*");
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    }
-    res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization"
-    );
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    next();
-  },
+  cors(corsOptions), // use same CORS logic as API
   express.static(path.join(__dirname, "uploads"), {
     setHeaders: (res, filePath) => {
       const ext = path.extname(filePath).toLowerCase();
@@ -152,7 +113,10 @@ app.use("/api/users", userRoutes);
 app.use("/api/assessment", assessmentRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/news", newsRoutes);
-app.use("/api/friends", friendRoutes); // ✅ new
+app.use("/api/friends", friendRoutes);
+app.use("/api/msg", messageRoutes);
+app.use("/api/matches", matchRoutes);
+app.use("/api/tags", tagsRoutes);
 
 // ---------- Admin routes ----------
 app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
@@ -197,7 +161,11 @@ app.get("/api/demo-assessment", async (req, res) => {
   }
 });
 
+// ---------- Start Server with Socket.IO ----------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+const server = http.createServer(app);
+initSocket(server); // ✅ wire socket.io to HTTP server
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });

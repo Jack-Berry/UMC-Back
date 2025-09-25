@@ -2,24 +2,22 @@
 const express = require("express");
 const { pool } = require("../db");
 const authenticateToken = require("../middleware/authMiddleware");
+const { updateUserScores } = require("../utils/scoreAggregator");
 
 const router = express.Router();
 
-// 🔒 Apply auth + disable caching to all assessment routes
-router.use(authenticateToken, (req, res, next) => {
-  res.setHeader("Cache-Control", "no-store");
-  next();
-});
+// 🔒 Apply auth to all assessment routes
+router.use(authenticateToken);
 
 /**
  * ✅ Submit or update an assessment
  * POST /api/assessment/:type
  */
 router.post("/:type", async (req, res) => {
-  console.log("Incoming assessment submission:", req.params, req.body);
   const assessmentType = req.params.type;
   const { userId, answers } = req.body;
 
+  // 🔹 Validate request body
   if (!userId || !assessmentType || !Array.isArray(answers)) {
     return res.status(400).json({
       error: "Missing required data: userId, assessmentType, answers[]",
@@ -29,6 +27,7 @@ router.post("/:type", async (req, res) => {
     return res.status(400).json({ error: "answers[] cannot be empty" });
   }
 
+  // 🔹 Validate each answer
   for (const [i, a] of answers.entries()) {
     if (!a) return res.status(400).json({ error: `answers[${i}] is empty` });
 
@@ -81,14 +80,23 @@ router.post("/:type", async (req, res) => {
       );
 
       await client.query("COMMIT");
-      res.json({ success: true });
     } catch (err) {
       await client.query("ROLLBACK");
       console.error("Assessment insert error:", err);
-      res.status(500).json({ error: "Database error" });
+      return res.status(500).json({ error: "Database error" });
     } finally {
       client.release();
     }
+
+    // 🔹 Now recompute scores for this user
+    try {
+      await updateUserScores(userId);
+    } catch (err) {
+      // Log but don’t block the response — answers are still saved
+      console.error("Score update error:", err);
+    }
+
+    res.json({ success: true });
   } catch (err) {
     console.error("Pool error:", err);
     res.status(500).json({ error: "Server error" });
@@ -115,24 +123,41 @@ router.get("/categories", async (req, res) => {
 });
 
 /**
- * ✅ Get questions for a given assessment type
+ * ✅ Get questions for a given assessment type (return tags as [{id,name}])
  * GET /api/assessment/:type/questions
  */
 router.get("/:type/questions", async (req, res) => {
   const { type } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT id, category, text, version, active, parent_id
-       FROM assessment_questions
-       WHERE assessment_type = $1 AND active = true
-       ORDER BY id`,
+      `SELECT
+        q.id,
+        q.category,
+        q.text,
+        q.version,
+        q.active,
+        q.parent_id,
+        COALESCE(
+          json_agg(json_build_object('id', t.id, 'name', t.name))
+          FILTER (WHERE t.id IS NOT NULL),
+          '[]'
+        ) AS tags
+       FROM assessment_questions q
+       LEFT JOIN question_tags qt ON qt.question_id = q.id
+       LEFT JOIN tags t ON t.id = qt.tag_id
+       WHERE q.assessment_type = $1
+         AND q.active = true
+       GROUP BY q.id
+       ORDER BY q.sort_order NULLS LAST, q.id`,
       [type]
     );
+
     if (rows.length === 0) {
       return res
         .status(404)
         .json({ error: `No questions found for type: ${type}` });
     }
+
     res.json({ assessmentType: type, questions: rows });
   } catch (err) {
     console.error("Fetch questions error:", err);
@@ -141,20 +166,41 @@ router.get("/:type/questions", async (req, res) => {
 });
 
 /**
- * ✅ Get a user’s submitted answers for a type
+ * ✅ Get a user’s submitted answers for a type (with tags)
  * GET /api/assessment/:type/:userId
  */
 router.get("/:type/:userId", async (req, res) => {
   const { type, userId } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT question_id, question_text, category, score, is_followup, updated_at
-       FROM user_assessment_answers
-       WHERE user_id = $1 AND assessment_type = $2
-       ORDER BY category, question_id`,
+      `SELECT
+         a.question_id,
+         a.question_text,
+         a.category,
+         a.score,
+         a.is_followup,
+         a.updated_at,
+         COALESCE(
+           json_agg(json_build_object('id', t.id, 'name', t.name))
+           FILTER (WHERE t.id IS NOT NULL),
+           '[]'
+         ) AS tags
+       FROM user_assessment_answers a
+       LEFT JOIN assessment_questions q ON q.id = a.question_id
+       LEFT JOIN question_tags qt ON qt.question_id = q.id
+       LEFT JOIN tags t ON t.id = qt.tag_id
+       WHERE a.user_id = $1
+         AND a.assessment_type = $2
+       GROUP BY a.question_id, a.question_text, a.category, a.score, a.is_followup, a.updated_at
+       ORDER BY a.category, a.question_id`,
       [userId, type]
     );
-    res.json({ assessmentType: type, userId: Number(userId), answers: rows });
+
+    res.json({
+      assessmentType: type,
+      userId: Number(userId),
+      answers: rows,
+    });
   } catch (err) {
     console.error("Fetch assessment error:", err);
     res.status(500).json({ error: "Database error" });
@@ -183,7 +229,7 @@ router.delete("/all/:userId", async (req, res) => {
 });
 
 /**
- * ✅ Wipe a single type
+ * ✅ Wipe only a specific type of answers
  * DELETE /api/assessment/:type/:userId
  */
 router.delete("/:type/:userId", async (req, res) => {
@@ -193,9 +239,9 @@ router.delete("/:type/:userId", async (req, res) => {
       `DELETE FROM user_assessment_answers WHERE user_id = $1 AND assessment_type = $2`,
       [userId, type]
     );
-    res.json({ success: true, message: `${type} assessment cleared` });
+    res.json({ success: true, message: "Assessment type wiped" });
   } catch (err) {
-    console.error("Wipe assessment error:", err);
+    console.error("Wipe assessment type error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
