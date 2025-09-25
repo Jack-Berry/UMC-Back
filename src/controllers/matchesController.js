@@ -79,7 +79,7 @@ async function getMatches(req, res) {
         usefulForThem,
       };
     });
-
+    matches.filter((m) => m.matchScore >= 80);
     matches.sort((a, b) => b.matchScore - a.matchScore);
     res.json({ matches });
   } catch (err) {
