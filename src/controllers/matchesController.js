@@ -1,14 +1,10 @@
 const { pool } = require("../db");
 
-/**
- * Get suggested matches for the logged-in user
- */
 async function getMatches(req, res) {
   const userId = req.user.id;
   const distanceKm = parseInt(req.query.distanceKm || "50", 10);
 
   try {
-    // 1. Current user
     const { rows: meRows } = await pool.query(
       `SELECT id, name, email, lat, lng, category_scores, tag_scores
        FROM users
@@ -23,24 +19,22 @@ async function getMatches(req, res) {
       return res.status(400).json({ error: "User has no location set" });
     }
 
-    // 2. Find nearby users with Haversine
     const { rows: candidates } = await pool.query(
-      `SELECT id, name, email, avatar_url, lat, lng, category_scores, tag_scores,
-              (6371 * acos(
-                cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
-                sin(radians($2)) * sin(radians(lat))
-              )) AS distance_km
-       FROM users
-       WHERE id <> $1
-         AND lat IS NOT NULL AND lng IS NOT NULL
-       HAVING (6371 * acos(
-                 cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
-                 sin(radians($2)) * sin(radians(lat))
-               )) <= $4`,
+      `SELECT *
+       FROM (
+         SELECT id, name, email, avatar_url, lat, lng, category_scores, tag_scores,
+                (6371 * acos(
+                  cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
+                  sin(radians($2)) * sin(radians(lat))
+                )) AS distance_km
+         FROM users
+         WHERE id <> $1
+           AND lat IS NOT NULL AND lng IS NOT NULL
+       ) AS sub
+       WHERE distance_km <= $4`,
       [userId, me.lat, me.lng, distanceKm]
     );
 
-    // 3. Score matches
     const matches = candidates.map((u) => {
       const myCats = me.category_scores || {};
       const theirCats = u.category_scores || {};
@@ -87,7 +81,6 @@ async function getMatches(req, res) {
     });
 
     matches.sort((a, b) => b.matchScore - a.matchScore);
-
     res.json({ matches });
   } catch (err) {
     console.error("Match fetch error details:", err);
@@ -95,21 +88,14 @@ async function getMatches(req, res) {
   }
 }
 
-/**
- * Search matches by tag (skill keyword)
- * GET /api/matches/search?tag=plumbing
- */
 async function searchMatchesByTag(req, res) {
   const userId = req.user.id;
   const { tag } = req.query;
   const distanceKm = parseInt(req.query.distanceKm || "50", 10);
 
-  if (!tag) {
-    return res.status(400).json({ error: "Missing ?tag= parameter" });
-  }
+  if (!tag) return res.status(400).json({ error: "Missing ?tag= parameter" });
 
   try {
-    // 1. Current user
     const { rows: meRows } = await pool.query(
       `SELECT id, name, email, lat, lng, tag_scores
        FROM users
@@ -124,24 +110,22 @@ async function searchMatchesByTag(req, res) {
       return res.status(400).json({ error: "User has no location set" });
     }
 
-    // 2. Candidates within distance
     const { rows: candidates } = await pool.query(
-      `SELECT id, name, email, avatar_url, lat, lng, tag_scores,
-              (6371 * acos(
-                cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
-                sin(radians($2)) * sin(radians(lat))
-              )) AS distance_km
-       FROM users
-       WHERE id <> $1
-         AND lat IS NOT NULL AND lng IS NOT NULL
-       HAVING (6371 * acos(
-                 cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
-                 sin(radians($2)) * sin(radians(lat))
-               )) <= $4`,
+      `SELECT *
+       FROM (
+         SELECT id, name, email, avatar_url, lat, lng, tag_scores,
+                (6371 * acos(
+                  cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
+                  sin(radians($2)) * sin(radians(lat))
+                )) AS distance_km
+         FROM users
+         WHERE id <> $1
+           AND lat IS NOT NULL AND lng IS NOT NULL
+       ) AS sub
+       WHERE distance_km <= $4`,
       [userId, me.lat, me.lng, distanceKm]
     );
 
-    // 3. Filter for tag complements
     const matches = candidates
       .map((u) => {
         const theirTags = u.tag_scores || {};
@@ -166,7 +150,6 @@ async function searchMatchesByTag(req, res) {
       .filter(Boolean);
 
     matches.sort((a, b) => b.theirScore - a.theirScore);
-
     res.json({ matches });
   } catch (err) {
     console.error("Match search error details:", err);
