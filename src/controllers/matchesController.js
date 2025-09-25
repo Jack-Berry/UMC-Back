@@ -8,6 +8,7 @@ async function getMatches(req, res) {
   const distanceKm = parseInt(req.query.distanceKm || "50", 10);
 
   try {
+    // 1. Current user
     const { rows: meRows } = await pool.query(
       `SELECT id, name, email, lat, lng, category_scores, tag_scores
        FROM users
@@ -18,19 +19,28 @@ async function getMatches(req, res) {
       return res.status(404).json({ error: "User not found" });
     const me = meRows[0];
 
+    if (!me.lat || !me.lng) {
+      return res.status(400).json({ error: "User has no location set" });
+    }
+
+    // 2. Find nearby users with Haversine
     const { rows: candidates } = await pool.query(
-      `SELECT id, name, email, avatar_url, lat, lng, category_scores, tag_scores
+      `SELECT id, name, email, avatar_url, lat, lng, category_scores, tag_scores,
+              (6371 * acos(
+                cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
+                sin(radians($2)) * sin(radians(lat))
+              )) AS distance_km
        FROM users
        WHERE id <> $1
          AND lat IS NOT NULL AND lng IS NOT NULL
-         AND ST_DWithin(
-           ST_MakePoint(lng, lat)::geography,
-           ST_MakePoint($2, $3)::geography,
-           $4 * 1000
-         )`,
-      [userId, me.lng, me.lat, distanceKm]
+       HAVING (6371 * acos(
+                 cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
+                 sin(radians($2)) * sin(radians(lat))
+               )) <= $4`,
+      [userId, me.lat, me.lng, distanceKm]
     );
 
+    // 3. Score matches
     const matches = candidates.map((u) => {
       const myCats = me.category_scores || {};
       const theirCats = u.category_scores || {};
@@ -70,6 +80,7 @@ async function getMatches(req, res) {
         email: u.email,
         avatar: u.avatar_url,
         matchScore: categoryScore + tagScore,
+        distanceKm: Number(u.distance_km?.toFixed(1) || 0),
         usefulForMe,
         usefulForThem,
       };
@@ -79,8 +90,8 @@ async function getMatches(req, res) {
 
     res.json({ matches });
   } catch (err) {
-    console.error("Match fetch error:", err);
-    res.status(500).json({ error: "Database error" });
+    console.error("Match fetch error details:", err);
+    res.status(500).json({ error: "Database error", details: err.message });
   }
 }
 
@@ -98,6 +109,7 @@ async function searchMatchesByTag(req, res) {
   }
 
   try {
+    // 1. Current user
     const { rows: meRows } = await pool.query(
       `SELECT id, name, email, lat, lng, tag_scores
        FROM users
@@ -108,19 +120,28 @@ async function searchMatchesByTag(req, res) {
       return res.status(404).json({ error: "User not found" });
     const me = meRows[0];
 
+    if (!me.lat || !me.lng) {
+      return res.status(400).json({ error: "User has no location set" });
+    }
+
+    // 2. Candidates within distance
     const { rows: candidates } = await pool.query(
-      `SELECT id, name, email, avatar_url, lat, lng, tag_scores
+      `SELECT id, name, email, avatar_url, lat, lng, tag_scores,
+              (6371 * acos(
+                cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
+                sin(radians($2)) * sin(radians(lat))
+              )) AS distance_km
        FROM users
        WHERE id <> $1
          AND lat IS NOT NULL AND lng IS NOT NULL
-         AND ST_DWithin(
-           ST_MakePoint(lng, lat)::geography,
-           ST_MakePoint($2, $3)::geography,
-           $4 * 1000
-         )`,
-      [userId, me.lng, me.lat, distanceKm]
+       HAVING (6371 * acos(
+                 cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
+                 sin(radians($2)) * sin(radians(lat))
+               )) <= $4`,
+      [userId, me.lat, me.lng, distanceKm]
     );
 
+    // 3. Filter for tag complements
     const matches = candidates
       .map((u) => {
         const theirTags = u.tag_scores || {};
@@ -128,7 +149,6 @@ async function searchMatchesByTag(req, res) {
         const myScore = Number(myTags[tag] || 0);
         const theirScore = Number(theirTags[tag] || 0);
 
-        // Only meaningful if they’re strong where I’m weak
         if (myScore < 40 && theirScore > 70) {
           return {
             id: u.id,
@@ -138,6 +158,7 @@ async function searchMatchesByTag(req, res) {
             tag,
             myScore,
             theirScore,
+            distanceKm: Number(u.distance_km?.toFixed(1) || 0),
           };
         }
         return null;
@@ -148,8 +169,8 @@ async function searchMatchesByTag(req, res) {
 
     res.json({ matches });
   } catch (err) {
-    console.error("Match search error:", err);
-    res.status(500).json({ error: "Database error" });
+    console.error("Match search error details:", err);
+    res.status(500).json({ error: "Database error", details: err.message });
   }
 }
 
