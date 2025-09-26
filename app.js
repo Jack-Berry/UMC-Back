@@ -7,6 +7,19 @@ const dotenv = require("dotenv");
 const path = require("path");
 const rateLimit = require("express-rate-limit");
 
+// ---------- Add timestamps to logs ----------
+const origLog = console.log;
+console.log = (...args) => {
+  const timestamp = new Date().toISOString();
+  origLog(`[${timestamp}]`, ...args);
+};
+
+const origError = console.error;
+console.error = (...args) => {
+  const timestamp = new Date().toISOString();
+  origError(`[${timestamp}]`, ...args);
+};
+
 // Routes & middleware
 const authRoutes = require("./src/routes/authRoutes");
 const assessmentRoutes = require("./src/routes/assessment");
