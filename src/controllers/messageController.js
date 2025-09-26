@@ -1,12 +1,14 @@
 const { pool } = require("../db");
 const { getIO } = require("../socket");
+const { verifyMatchToken } = require("../utils/matchToken");
 
 // helper: check if two users are friends
 async function isFriends(userA, userB) {
   const { rows } = await pool.query(
     `SELECT 1 FROM friends
      WHERE ((requester_id=$1 AND receiver_id=$2) OR (requester_id=$2 AND receiver_id=$1))
-     AND status='accepted' LIMIT 1`,
+     AND status='accepted'
+     LIMIT 1`,
     [userA, userB]
   );
   return rows.length > 0;
@@ -18,10 +20,30 @@ async function isFriends(userA, userB) {
 exports.getOrCreateConversation = async (req, res) => {
   try {
     const actorId = req.user.id;
-    const { peerId } = req.body;
 
-    const allowed = await isFriends(actorId, peerId);
-    if (!allowed) return res.status(403).json({ error: "Not allowed" });
+    // ✅ Ensure peerId is parsed as an integer
+    const { peerId: rawPeerId, matchToken } = req.body;
+    const peerId = parseInt(rawPeerId, 10);
+
+    if (!peerId) {
+      return res.status(400).json({ error: "Invalid or missing peerId" });
+    }
+
+    console.log(`[${new Date().toISOString()}] 📥 Conversation request`, {
+      actorId,
+      peerId,
+      hasToken: !!matchToken,
+    });
+
+    let allowed = await isFriends(actorId, peerId);
+    if (!allowed && matchToken) {
+      allowed = verifyMatchToken(matchToken, actorId, peerId);
+      console.log(`[${new Date().toISOString()}] 🔑 Token verified?`, allowed);
+    }
+
+    if (!allowed) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
 
     // Check existing conversation
     const { rows: found } = await pool.query(
@@ -32,7 +54,13 @@ exports.getOrCreateConversation = async (req, res) => {
        LIMIT 1`,
       [actorId, peerId]
     );
-    if (found.length) return res.json({ id: found[0].id });
+    if (found.length) {
+      console.log(
+        `[${new Date().toISOString()}] 🔄 Found existing conversation`,
+        found[0].id
+      );
+      return res.json({ id: found[0].id });
+    }
 
     // Create new conversation
     const { rows } = await pool.query(
@@ -49,9 +77,17 @@ exports.getOrCreateConversation = async (req, res) => {
       [convId, actorId, peerId]
     );
 
+    console.log(
+      `[${new Date().toISOString()}] ✅ New conversation created`,
+      convId
+    );
+
     res.json({ id: convId });
   } catch (err) {
-    console.error("Error creating conversation:", err.message);
+    console.error(
+      `[${new Date().toISOString()}] ❌ Error creating conversation:`,
+      err
+    );
     res.status(500).json({ error: "Server error" });
   }
 };
@@ -136,35 +172,45 @@ exports.listMessages = async (req, res) => {
   }
 };
 
-// List threads
+// List threads with full participant details, only if messages exist
 exports.listThreads = async (req, res) => {
   try {
     const userId = req.user.id;
     const { rows } = await pool.query(
       `
-      SELECT c.id, c.created_at, json_agg(u.id) AS participants
+      SELECT c.id,
+             c.created_at,
+             json_agg(
+               json_build_object(
+                 'id', u.id,
+                 'name', u.name,
+                 'avatar', u.avatar_url
+               )
+             ) AS participants
       FROM conversations c
       JOIN conversation_participants p ON p.conversation_id = c.id
       JOIN users u ON u.id = p.user_id
       WHERE c.id IN (
         SELECT conversation_id FROM conversation_participants WHERE user_id=$1
       )
+      AND EXISTS (
+        SELECT 1 FROM messages m WHERE m.conversation_id = c.id
+      ) -- ✅ only include if at least one message exists
       GROUP BY c.id
       ORDER BY c.created_at DESC
-    `,
+      `,
       [userId]
     );
 
-    // normalize participants
     const normalized = rows.map((r) => ({
       id: r.id,
       createdAt: r.created_at,
-      participants: r.participants,
+      participants: r.participants || [],
     }));
 
     res.json(normalized);
   } catch (err) {
-    console.error(err);
+    console.error("Error listing threads:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };

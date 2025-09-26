@@ -1,5 +1,6 @@
 // src/controllers/matchesController.js
 const { pool } = require("../db");
+const { generateMatchToken } = require("../utils/matchToken");
 
 /**
  * Get suggested matches for the logged-in user
@@ -191,4 +192,59 @@ async function searchMatchesByTag(req, res) {
   }
 }
 
-module.exports = { getMatches, searchMatchesByTag };
+/**
+ * Internal helper: re-run complement logic between two specific users
+ * Used for verifying one-off matches before issuing a token
+ */
+async function checkIfMatch(userA, userB) {
+  const { rows: users } = await pool.query(
+    `SELECT id, category_scores, tag_scores, lat, lng FROM users WHERE id IN ($1, $2)`,
+    [userA, userB]
+  );
+  if (users.length !== 2) return false;
+
+  const me = users.find((u) => u.id === userA);
+  const them = users.find((u) => u.id === userB);
+
+  if (!me || !them || !me.lat || !me.lng || !them.lat || !them.lng) {
+    return false;
+  }
+
+  let score = 0;
+
+  const myCats = me.category_scores || {};
+  const theirCats = them.category_scores || {};
+  Object.entries(myCats).forEach(([cat, myVal]) => {
+    const myScore = Number(myVal || 0);
+    const theirScore = Number(theirCats[cat] || 0);
+    if (myScore < 40 && theirScore > 70) score += 20;
+    if (myScore > 70 && theirScore < 40) score += 20;
+  });
+
+  const myTags = me.tag_scores || {};
+  const theirTags = them.tag_scores || {};
+  Object.entries(myTags).forEach(([tag, myVal]) => {
+    const myScore = Number(myVal || 0);
+    const theirScore = Number(theirTags[tag] || 0);
+    if (myScore < 40 && theirScore > 70) score += 10;
+    if (myScore > 70 && theirScore < 40) score += 10;
+  });
+
+  return score >= 80; // same threshold as getMatches
+}
+
+// Generate match tokens
+async function getMatchToken(req, res) {
+  const actorId = req.user.id;
+  const peerId = parseInt(req.query.peerId, 10);
+  if (!peerId) return res.status(400).json({ error: "Missing peerId" });
+
+  // 🔹 Re-run your match calculation for this peer
+  const isMatch = await checkIfMatch(actorId, peerId);
+  if (!isMatch) return res.status(403).json({ error: "Not a match" });
+
+  const token = generateMatchToken(actorId, peerId);
+  res.json({ token });
+}
+
+module.exports = { getMatches, searchMatchesByTag, getMatchToken };
