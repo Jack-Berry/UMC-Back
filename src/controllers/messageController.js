@@ -19,53 +19,72 @@ async function isFriends(userA, userB) {
 // Create or fetch conversation
 exports.getOrCreateConversation = async (req, res) => {
   try {
-    const actorId = req.user.id;
+    const actorId = req.user?.id;
 
-    // ✅ Ensure peerId is parsed as an integer
-    const { peerId: rawPeerId, matchToken } = req.body;
-    const peerId = parseInt(rawPeerId, 10);
+    // ---- DIAGNOSTIC LOGS (timestamped) ----
+    const ts = new Date().toISOString();
+    console.log(`[${ts}] /api/msg/threads hit`);
+    console.log(`[${ts}] req.method=`, req.method);
+    console.log(`[${ts}] content-type=`, req.headers["content-type"]);
+    console.log(`[${ts}] raw body=`, req.body);
 
-    if (!peerId) {
+    // Accept peerId from body, query, or params as a fallback.
+    // (This prevents failures if a proxy/edge changes where the payload lands.)
+    const rawPeerId =
+      (req.body && (req.body.peerId ?? req.body.peer_id)) ??
+      req.query?.peerId ??
+      req.params?.peerId;
+
+    const matchToken =
+      (req.body && (req.body.matchToken ?? req.body.match_token)) ??
+      req.query?.matchToken ??
+      req.params?.matchToken;
+
+    const peerId = rawPeerId != null ? parseInt(rawPeerId, 10) : NaN;
+
+    console.log(
+      `[${ts}] parsed actorId=${actorId} peerId=${peerId} matchToken=${
+        matchToken ? "[present]" : "[missing]"
+      }`
+    );
+
+    if (!actorId || !Number.isInteger(peerId)) {
+      console.log(`[${ts}] 400 due to invalid inputs`);
       return res.status(400).json({ error: "Invalid or missing peerId" });
     }
 
-    console.log(`[${new Date().toISOString()}] 📥 Conversation request`, {
-      actorId,
-      peerId,
-      hasToken: !!matchToken,
-    });
-
+    // ----- AuthZ: friends OR a verified one-off match token -----
     let allowed = await isFriends(actorId, peerId);
     if (!allowed && matchToken) {
-      allowed = verifyMatchToken(matchToken, actorId, peerId);
-      console.log(`[${new Date().toISOString()}] 🔑 Token verified?`, allowed);
+      const ok = verifyMatchToken(matchToken, actorId, peerId);
+      console.log(`[${ts}] token verified?`, ok);
+      allowed = ok;
     }
-
     if (!allowed) {
+      console.log(`[${ts}] 403 Not allowed`);
       return res.status(403).json({ error: "Not allowed" });
     }
 
-    // Check existing conversation
+    // ----- Existing conversation? -----
     const { rows: found } = await pool.query(
       `SELECT c.id
-       FROM conversations c
-       JOIN conversation_participants p1 ON p1.conversation_id=c.id AND p1.user_id=$1
-       JOIN conversation_participants p2 ON p2.conversation_id=c.id AND p2.user_id=$2
-       LIMIT 1`,
+         FROM conversations c
+         JOIN conversation_participants p1
+           ON p1.conversation_id = c.id AND p1.user_id = $1
+         JOIN conversation_participants p2
+           ON p2.conversation_id = c.id AND p2.user_id = $2
+         LIMIT 1`,
       [actorId, peerId]
     );
     if (found.length) {
-      console.log(
-        `[${new Date().toISOString()}] 🔄 Found existing conversation`,
-        found[0].id
-      );
+      console.log(`[${ts}] returning existing conversation ${found[0].id}`);
       return res.json({ id: found[0].id });
     }
 
-    // Create new conversation
+    // ----- Create conversation -----
     const { rows } = await pool.query(
       `INSERT INTO conversations (created_by, key_salt)
-       VALUES ($1, decode(repeat('00',32),'hex'))
+       VALUES ($1, decode(repeat('00',32), 'hex'))
        RETURNING id`,
       [actorId]
     );
@@ -73,21 +92,17 @@ exports.getOrCreateConversation = async (req, res) => {
 
     await pool.query(
       `INSERT INTO conversation_participants (conversation_id, user_id)
-       VALUES ($1,$2),($1,$3)`,
+       VALUES ($1, $2), ($1, $3)`,
       [convId, actorId, peerId]
     );
 
     console.log(
-      `[${new Date().toISOString()}] ✅ New conversation created`,
-      convId
+      `[${ts}] created conversation ${convId} for ${actorId} <-> ${peerId}`
     );
-
     res.json({ id: convId });
   } catch (err) {
-    console.error(
-      `[${new Date().toISOString()}] ❌ Error creating conversation:`,
-      err
-    );
+    const ts = new Date().toISOString();
+    console.error(`[${ts}] ❌ Error creating conversation`, err);
     res.status(500).json({ error: "Server error" });
   }
 };
