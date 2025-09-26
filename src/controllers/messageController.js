@@ -85,6 +85,7 @@ exports.getOrCreateConversation = async (req, res) => {
 };
 
 // Send plaintext message
+// Send plaintext message
 exports.sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
@@ -125,9 +126,22 @@ exports.sendMessage = async (req, res) => {
       [conversationId, senderId, message.id]
     );
 
-    // Emit socket event
+    // --- 🔹 NEW: notify both the thread and the participants' user rooms ---
+    // Fetch all participants
+    const { rows: participants } = await pool.query(
+      `SELECT user_id FROM conversation_participants WHERE conversation_id = $1`,
+      [conversationId]
+    );
+
+    // Emit to the active thread room (anyone inside the chat)
     getIO().to(`thread_${conversationId}`).emit("newMessage", message);
 
+    // Emit to each participant's global user room (navbar/unread badge)
+    for (const { user_id } of participants) {
+      getIO().to(`user_${user_id}`).emit("newMessage", message);
+    }
+
+    // Respond to the sender
     res.json(message);
   } catch (err) {
     console.error("Error sending message:", err.message);
