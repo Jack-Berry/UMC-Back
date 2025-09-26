@@ -6,7 +6,8 @@ async function isFriends(userA, userB) {
   const { rows } = await pool.query(
     `SELECT 1 FROM friends
      WHERE ((requester_id=$1 AND receiver_id=$2) OR (requester_id=$2 AND receiver_id=$1))
-     AND status='accepted' LIMIT 1`,
+     AND status='accepted'
+     LIMIT 1`,
     [userA, userB]
   );
   return rows.length > 0;
@@ -136,13 +137,21 @@ exports.listMessages = async (req, res) => {
   }
 };
 
-// List threads
+// List threads with full participant details
 exports.listThreads = async (req, res) => {
   try {
     const userId = req.user.id;
     const { rows } = await pool.query(
       `
-      SELECT c.id, c.created_at, json_agg(u.id) AS participants
+      SELECT c.id,
+             c.created_at,
+             json_agg(
+               json_build_object(
+                 'id', u.id,
+                 'name', u.name,
+                 'avatar', u.avatar
+               )
+             ) AS participants
       FROM conversations c
       JOIN conversation_participants p ON p.conversation_id = c.id
       JOIN users u ON u.id = p.user_id
@@ -151,20 +160,19 @@ exports.listThreads = async (req, res) => {
       )
       GROUP BY c.id
       ORDER BY c.created_at DESC
-    `,
+      `,
       [userId]
     );
 
-    // normalize participants
     const normalized = rows.map((r) => ({
       id: r.id,
       createdAt: r.created_at,
-      participants: r.participants,
+      participants: r.participants || [],
     }));
 
     res.json(normalized);
   } catch (err) {
-    console.error(err);
+    console.error("Error listing threads:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };
