@@ -242,7 +242,7 @@ exports.markRead = async (req, res) => {
       `INSERT INTO message_reads (conversation_id, user_id, last_read_msg_id)
        VALUES ($1, $2, $3)
        ON CONFLICT (conversation_id, user_id)
-       DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id, updated_at = NOW()`,
+       DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id`,
       [conversationId, userId, lastReadMsgId]
     );
 
