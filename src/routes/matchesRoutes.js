@@ -15,4 +15,7 @@ router.get("/", getMatches);
 // Search by tag
 router.get("/search", searchMatchesByTag);
 
+// Match token
+router.get("/token", authenticateToken, getMatchToken);
+
 module.exports = router;
