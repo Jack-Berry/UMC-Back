@@ -1,5 +1,6 @@
 const { pool } = require("../db");
 const { getIO } = require("../socket");
+const { verifyMatchToken } = require("../utils/matchToken");
 
 // helper: check if two users are friends
 async function isFriends(userA, userB) {
@@ -19,10 +20,16 @@ async function isFriends(userA, userB) {
 exports.getOrCreateConversation = async (req, res) => {
   try {
     const actorId = req.user.id;
-    const { peerId } = req.body;
+    const { peerId, matchToken } = req.body;
 
-    const allowed = await isFriends(actorId, peerId);
-    if (!allowed) return res.status(403).json({ error: "Not allowed" });
+    let allowed = await isFriends(actorId, peerId);
+    if (!allowed && matchToken) {
+      allowed = verifyMatchToken(matchToken, actorId, peerId);
+    }
+
+    if (!allowed) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
 
     // Check existing conversation
     const { rows: found } = await pool.query(
