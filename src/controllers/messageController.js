@@ -20,13 +20,21 @@ async function isFriends(userA, userB) {
 exports.getOrCreateConversation = async (req, res) => {
   try {
     const actorId = req.user.id;
-    const { peerId, matchToken } = req.body;
+
+    // ✅ Ensure peerId is parsed as an integer
+    const { peerId: rawPeerId, matchToken } = req.body;
+    const peerId = parseInt(rawPeerId, 10);
+
+    if (!peerId) {
+      return res.status(400).json({ error: "Invalid or missing peerId" });
+    }
+
+    console.log("📥 Conversation request", { actorId, peerId, matchToken });
 
     let allowed = await isFriends(actorId, peerId);
     if (!allowed && matchToken) {
-      console.log("peerId", peerId, "matchToken", matchToken);
-
       allowed = verifyMatchToken(matchToken, actorId, peerId);
+      console.log("🔑 Token verified?", allowed);
     }
 
     if (!allowed) {
@@ -61,7 +69,7 @@ exports.getOrCreateConversation = async (req, res) => {
 
     res.json({ id: convId });
   } catch (err) {
-    console.error("Error creating conversation:", err.message);
+    console.error("❌ Error creating conversation:", err);
     res.status(500).json({ error: "Server error" });
   }
 };
