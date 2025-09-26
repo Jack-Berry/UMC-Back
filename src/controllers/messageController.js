@@ -29,12 +29,16 @@ exports.getOrCreateConversation = async (req, res) => {
       return res.status(400).json({ error: "Invalid or missing peerId" });
     }
 
-    console.log("📥 Conversation request", { actorId, peerId, matchToken });
+    console.log(`[${new Date().toISOString()}] 📥 Conversation request`, {
+      actorId,
+      peerId,
+      hasToken: !!matchToken,
+    });
 
     let allowed = await isFriends(actorId, peerId);
     if (!allowed && matchToken) {
       allowed = verifyMatchToken(matchToken, actorId, peerId);
-      console.log("🔑 Token verified?", allowed);
+      console.log(`[${new Date().toISOString()}] 🔑 Token verified?`, allowed);
     }
 
     if (!allowed) {
@@ -50,7 +54,13 @@ exports.getOrCreateConversation = async (req, res) => {
        LIMIT 1`,
       [actorId, peerId]
     );
-    if (found.length) return res.json({ id: found[0].id });
+    if (found.length) {
+      console.log(
+        `[${new Date().toISOString()}] 🔄 Found existing conversation`,
+        found[0].id
+      );
+      return res.json({ id: found[0].id });
+    }
 
     // Create new conversation
     const { rows } = await pool.query(
@@ -67,9 +77,17 @@ exports.getOrCreateConversation = async (req, res) => {
       [convId, actorId, peerId]
     );
 
+    console.log(
+      `[${new Date().toISOString()}] ✅ New conversation created`,
+      convId
+    );
+
     res.json({ id: convId });
   } catch (err) {
-    console.error("❌ Error creating conversation:", err);
+    console.error(
+      `[${new Date().toISOString()}] ❌ Error creating conversation:`,
+      err
+    );
     res.status(500).json({ error: "Server error" });
   }
 };
