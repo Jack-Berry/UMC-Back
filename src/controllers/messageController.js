@@ -137,7 +137,7 @@ exports.listMessages = async (req, res) => {
   }
 };
 
-// List threads with full participant details
+// List threads with full participant details, only if messages exist
 exports.listThreads = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -149,7 +149,7 @@ exports.listThreads = async (req, res) => {
                json_build_object(
                  'id', u.id,
                  'name', u.name,
-                 'avatar', u.avatar_url  -- ✅ FIXED: column is avatar_url
+                 'avatar', u.avatar_url
                )
              ) AS participants
       FROM conversations c
@@ -158,6 +158,9 @@ exports.listThreads = async (req, res) => {
       WHERE c.id IN (
         SELECT conversation_id FROM conversation_participants WHERE user_id=$1
       )
+      AND EXISTS (
+        SELECT 1 FROM messages m WHERE m.conversation_id = c.id
+      ) -- ✅ only include if at least one message exists
       GROUP BY c.id
       ORDER BY c.created_at DESC
       `,
