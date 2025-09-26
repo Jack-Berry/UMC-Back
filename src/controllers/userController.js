@@ -143,3 +143,28 @@ exports.searchUsers = async (req, res) => {
     res.status(500).json({ error: "Failed to search users" });
   }
 };
+
+// 🔹 Get user by ID
+exports.getUserById = async (req, res) => {
+  const userId = req.params.id;
+
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, avatar_url, useful_at, useless_at,
+              location, region, lat, lng, show_location,
+              created_at, has_completed_assessment
+       FROM users
+       WHERE id = $1`,
+      [userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error fetching user:", err);
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+};

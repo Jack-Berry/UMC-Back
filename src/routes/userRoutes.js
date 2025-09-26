@@ -17,4 +17,7 @@ router.put("/:id", authenticateToken, userController.updateProfile);
 // Search users
 router.get("/search", authenticateToken, userController.searchUsers);
 
+// Get user by ID
+router.get("/:id", authenticateToken, userController.getUserById);
+
 module.exports = router;
