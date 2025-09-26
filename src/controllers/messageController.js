@@ -1,3 +1,4 @@
+// controllers/messageController.js
 const { pool } = require("../db");
 const { getIO } = require("../socket");
 const { verifyMatchToken } = require("../utils/matchToken");
@@ -21,15 +22,6 @@ exports.getOrCreateConversation = async (req, res) => {
   try {
     const actorId = req.user?.id;
 
-    // ---- DIAGNOSTIC LOGS (timestamped) ----
-    const ts = new Date().toISOString();
-    console.log(`[${ts}] /api/msg/threads hit`);
-    console.log(`[${ts}] req.method=`, req.method);
-    console.log(`[${ts}] content-type=`, req.headers["content-type"]);
-    console.log(`[${ts}] raw body=`, req.body);
-
-    // Accept peerId from body, query, or params as a fallback.
-    // (This prevents failures if a proxy/edge changes where the payload lands.)
     const rawPeerId =
       (req.body && (req.body.peerId ?? req.body.peer_id)) ??
       req.query?.peerId ??
@@ -42,30 +34,20 @@ exports.getOrCreateConversation = async (req, res) => {
 
     const peerId = rawPeerId != null ? parseInt(rawPeerId, 10) : NaN;
 
-    console.log(
-      `[${ts}] parsed actorId=${actorId} peerId=${peerId} matchToken=${
-        matchToken ? "[present]" : "[missing]"
-      }`
-    );
-
     if (!actorId || !Number.isInteger(peerId)) {
-      console.log(`[${ts}] 400 due to invalid inputs`);
       return res.status(400).json({ error: "Invalid or missing peerId" });
     }
 
-    // ----- AuthZ: friends OR a verified one-off match token -----
+    // AuthZ: friends OR a verified one-off match token
     let allowed = await isFriends(actorId, peerId);
     if (!allowed && matchToken) {
-      const ok = verifyMatchToken(matchToken, actorId, peerId);
-      console.log(`[${ts}] token verified?`, ok);
-      allowed = ok;
+      allowed = verifyMatchToken(matchToken, actorId, peerId);
     }
     if (!allowed) {
-      console.log(`[${ts}] 403 Not allowed`);
       return res.status(403).json({ error: "Not allowed" });
     }
 
-    // ----- Existing conversation? -----
+    // Existing conversation?
     const { rows: found } = await pool.query(
       `SELECT c.id
          FROM conversations c
@@ -77,11 +59,10 @@ exports.getOrCreateConversation = async (req, res) => {
       [actorId, peerId]
     );
     if (found.length) {
-      console.log(`[${ts}] returning existing conversation ${found[0].id}`);
       return res.json({ id: found[0].id });
     }
 
-    // ----- Create conversation -----
+    // Create conversation
     const { rows } = await pool.query(
       `INSERT INTO conversations (created_by, key_salt)
        VALUES ($1, decode(repeat('00',32), 'hex'))
@@ -96,13 +77,9 @@ exports.getOrCreateConversation = async (req, res) => {
       [convId, actorId, peerId]
     );
 
-    console.log(
-      `[${ts}] created conversation ${convId} for ${actorId} <-> ${peerId}`
-    );
     res.json({ id: convId });
   } catch (err) {
-    const ts = new Date().toISOString();
-    console.error(`[${ts}] ❌ Error creating conversation`, err);
+    console.error("❌ Error creating conversation", err);
     res.status(500).json({ error: "Server error" });
   }
 };
@@ -139,7 +116,16 @@ exports.sendMessage = async (req, res) => {
       conversationId,
     };
 
-    // 🔹 Emit socket event
+    // Mark this sender’s message as read for themselves
+    await pool.query(
+      `INSERT INTO message_reads (conversation_id, user_id, last_read_msg_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (conversation_id, user_id)
+       DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id`,
+      [conversationId, senderId, message.id]
+    );
+
+    // Emit socket event
     getIO().to(`thread_${conversationId}`).emit("newMessage", message);
 
     res.json(message);
@@ -171,7 +157,6 @@ exports.listMessages = async (req, res) => {
       [conversationId]
     );
 
-    // 🔹 Normalize keys
     const normalized = msgs.map((m) => ({
       id: m.id,
       senderId: m.sender_id,
@@ -201,17 +186,28 @@ exports.listThreads = async (req, res) => {
                  'name', u.name,
                  'avatar', u.avatar_url
                )
-             ) AS participants
+             ) AS participants,
+             lm.id AS last_message_id,
+             mr.last_read_msg_id
       FROM conversations c
       JOIN conversation_participants p ON p.conversation_id = c.id
       JOIN users u ON u.id = p.user_id
+      LEFT JOIN LATERAL (
+        SELECT id
+        FROM messages
+        WHERE conversation_id = c.id
+        ORDER BY id DESC
+        LIMIT 1
+      ) lm ON TRUE
+      LEFT JOIN message_reads mr
+        ON mr.conversation_id = c.id AND mr.user_id = $1
       WHERE c.id IN (
         SELECT conversation_id FROM conversation_participants WHERE user_id=$1
       )
       AND EXISTS (
         SELECT 1 FROM messages m WHERE m.conversation_id = c.id
-      ) -- ✅ only include if at least one message exists
-      GROUP BY c.id
+      )
+      GROUP BY c.id, lm.id, mr.last_read_msg_id
       ORDER BY c.created_at DESC
       `,
       [userId]
@@ -221,11 +217,35 @@ exports.listThreads = async (req, res) => {
       id: r.id,
       createdAt: r.created_at,
       participants: r.participants || [],
+      lastMessageId: r.last_message_id,
+      lastReadMsgId: r.last_read_msg_id,
     }));
 
     res.json(normalized);
   } catch (err) {
     console.error("Error listing threads:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// Mark messages as read
+exports.markRead = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const conversationId = req.params.id;
+    const { lastReadMsgId } = req.body;
+
+    await pool.query(
+      `INSERT INTO message_reads (conversation_id, user_id, last_read_msg_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (conversation_id, user_id)
+       DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id`,
+      [conversationId, userId, lastReadMsgId]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error marking messages as read:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 };
