@@ -149,7 +149,7 @@ exports.listThreads = async (req, res) => {
                json_build_object(
                  'id', u.id,
                  'name', u.name,
-                 'avatar', u.avatar
+                 'avatar', u.avatar_url  -- ✅ FIXED: column is avatar_url
                )
              ) AS participants
       FROM conversations c
