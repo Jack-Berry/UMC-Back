@@ -239,11 +239,11 @@ exports.markRead = async (req, res) => {
     const { lastReadMsgId } = req.body;
 
     await pool.query(
-      `INSERT INTO message_reads (user_id, conversation_id, last_read_msg_id)
+      `INSERT INTO message_reads (conversation_id, user_id, last_read_msg_id)
        VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, conversation_id)
+       ON CONFLICT (conversation_id, user_id)
        DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id, updated_at = NOW()`,
-      [userId, conversationId, lastReadMsgId]
+      [conversationId, userId, lastReadMsgId]
     );
 
     res.json({ success: true });
