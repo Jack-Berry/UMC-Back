@@ -179,17 +179,19 @@ exports.listThreads = async (req, res) => {
     const { rows } = await pool.query(
       `
       SELECT c.id,
-             c.created_at,
-             json_agg(
-               json_build_object(
-                 'id', u.id,
-                 'name', u.name,
-                 'avatar', u.avatar_url
-               )
-             ) AS participants,
-             lm.id AS last_message_id,
-             mr.last_read_msg_id
-      FROM conversations c
+       c.created_at,
+       json_agg(json_build_object('id', u.id, 'name', u.name, 'avatar', u.avatar_url)) AS participants,
+       COALESCE((
+         SELECT COUNT(*)
+         FROM messages m
+         WHERE m.conversation_id = c.id
+           AND m.id > COALESCE((
+             SELECT last_read_msg_id
+             FROM message_reads mr
+             WHERE mr.user_id = $1 AND mr.conversation_id = c.id
+           ), 0)
+       ), 0) AS unread_count
+FROM conversations c
       JOIN conversation_participants p ON p.conversation_id = c.id
       JOIN users u ON u.id = p.user_id
       LEFT JOIN LATERAL (
@@ -219,6 +221,7 @@ exports.listThreads = async (req, res) => {
       participants: r.participants || [],
       lastMessageId: r.last_message_id,
       lastReadMsgId: r.last_read_msg_id,
+      unreadCount: parseInt(r.unread_count, 10) || 0,
     }));
 
     res.json(normalized);
@@ -228,7 +231,7 @@ exports.listThreads = async (req, res) => {
   }
 };
 
-// Mark messages as read
+// PUT /api/msg/threads/:id/read
 exports.markRead = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -236,16 +239,16 @@ exports.markRead = async (req, res) => {
     const { lastReadMsgId } = req.body;
 
     await pool.query(
-      `INSERT INTO message_reads (conversation_id, user_id, last_read_msg_id)
+      `INSERT INTO message_reads (user_id, conversation_id, last_read_msg_id)
        VALUES ($1, $2, $3)
-       ON CONFLICT (conversation_id, user_id)
-       DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id`,
-      [conversationId, userId, lastReadMsgId]
+       ON CONFLICT (user_id, conversation_id)
+       DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id, updated_at = NOW()`,
+      [userId, conversationId, lastReadMsgId]
     );
 
     res.json({ success: true });
   } catch (err) {
-    console.error("Error marking messages as read:", err.message);
+    console.error("Error marking read:", err);
     res.status(500).json({ error: "Server error" });
   }
 };
