@@ -24,6 +24,8 @@ exports.getOrCreateConversation = async (req, res) => {
 
     let allowed = await isFriends(actorId, peerId);
     if (!allowed && matchToken) {
+      console.log("peerId", peerId, "matchToken", matchToken);
+
       allowed = verifyMatchToken(matchToken, actorId, peerId);
     }
 
