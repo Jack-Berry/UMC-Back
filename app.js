@@ -139,6 +139,7 @@ app.use(
   requireAdmin,
   adminAssessmentRouter
 );
+app.use("/api/admin/tags", authenticateToken, requireAdmin, tagsRoutes);
 
 // ---------- Status check ----------
 app.get("/api/status", async (req, res) => {
