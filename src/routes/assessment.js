@@ -177,27 +177,27 @@ router.get("/results/:userId", authenticateToken, async (req, res) => {
     const result = await pool.query(
       `
       SELECT 
-        a.id AS answer_id,
-        a.user_id,
-        a.score,
-        a.answer_text,
-        q.id AS question_id,
-        q.text AS question_text,
-        q.assessment_type,
-        q.category,
-        COALESCE(
-          json_agg(
-            DISTINCT jsonb_build_object('id', t.id, 'name', t.name)
-          ) FILTER (WHERE t.id IS NOT NULL),
-          '[]'
-        ) AS tags
-      FROM user_assessment_answers a
-      JOIN assessment_questions q ON q.id = a.question_id
-      LEFT JOIN question_tags qt ON qt.question_id = q.id
-      LEFT JOIN tags t ON t.id = qt.tag_id
-      WHERE a.user_id = $1
-      GROUP BY a.id, q.id
-      ORDER BY a.id;
+  a.id AS answer_id,
+  a.user_id,
+  a.score,
+  q.id AS question_id,
+  q.text AS question_text,
+  q.assessment_type,
+  q.category,
+  COALESCE(
+    json_agg(
+      DISTINCT jsonb_build_object('id', t.id, 'name', t.name)
+    ) FILTER (WHERE t.id IS NOT NULL),
+    '[]'
+  ) AS tags
+FROM user_assessment_answers a
+JOIN assessment_questions q ON q.id = a.question_id
+LEFT JOIN question_tags qt ON qt.question_id = q.id
+LEFT JOIN tags t ON t.id = qt.tag_id
+WHERE a.user_id = $1
+GROUP BY a.id, q.id
+ORDER BY a.id;
+
       `,
       [userId]
     );
