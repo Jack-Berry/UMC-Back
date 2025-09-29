@@ -2,7 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const {
-  getTags, // ✅ correct name
+  getTags,
   createTag,
   updateTag,
   deleteTag,

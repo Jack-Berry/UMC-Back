@@ -169,41 +169,43 @@ router.get("/:type/questions", async (req, res) => {
  * ✅ Get a user’s submitted answers for a type (with tags)
  * GET /api/assessment/:type/:userId
  */
-router.get("/:type/:userId", async (req, res) => {
-  const { type, userId } = req.params;
+// ✅ Live user results with fresh tag + question text
+router.get("/results/:userId", authenticateToken, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT
-         a.question_id,
-         a.question_text,
-         a.category,
-         a.score,
-         a.is_followup,
-         a.updated_at,
-         COALESCE(
-           json_agg(json_build_object('id', t.id, 'name', t.name))
-           FILTER (WHERE t.id IS NOT NULL),
-           '[]'
-         ) AS tags
-       FROM user_assessment_answers a
-       LEFT JOIN assessment_questions q ON q.id = a.question_id
-       LEFT JOIN question_tags qt ON qt.question_id = q.id
-       LEFT JOIN tags t ON t.id = qt.tag_id
-       WHERE a.user_id = $1
-         AND a.assessment_type = $2
-       GROUP BY a.question_id, a.question_text, a.category, a.score, a.is_followup, a.updated_at
-       ORDER BY a.category, a.question_id`,
-      [userId, type]
+    const userId = req.params.userId;
+
+    const result = await pool.query(
+      `
+      SELECT 
+        a.id AS answer_id,
+        a.user_id,
+        a.score,
+        a.answer_text,
+        q.id AS question_id,
+        q.text AS question_text,
+        q.assessment_type,
+        q.category,
+        COALESCE(
+          json_agg(
+            DISTINCT jsonb_build_object('id', t.id, 'name', t.name)
+          ) FILTER (WHERE t.id IS NOT NULL),
+          '[]'
+        ) AS tags
+      FROM user_assessment_answers a
+      JOIN assessment_questions q ON q.id = a.question_id
+      LEFT JOIN question_tags qt ON qt.question_id = q.id
+      LEFT JOIN tags t ON t.id = qt.tag_id
+      WHERE a.user_id = $1
+      GROUP BY a.id, q.id
+      ORDER BY a.id;
+      `,
+      [userId]
     );
 
-    res.json({
-      assessmentType: type,
-      userId: Number(userId),
-      answers: rows,
-    });
+    res.json(result.rows);
   } catch (err) {
-    console.error("Fetch assessment error:", err);
-    res.status(500).json({ error: "Database error" });
+    console.error("Error fetching live results", err);
+    res.status(500).json({ error: "Server error fetching results" });
   }
 });
 
