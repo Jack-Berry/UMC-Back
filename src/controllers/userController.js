@@ -3,6 +3,9 @@ const path = require("path");
 const { pool } = require("../db");
 const multer = require("multer");
 
+// presence helpers
+const { getOnlineUserIds, getPresenceForIds } = require("../socket");
+
 // 🔹 Upload directory (inside /uploads/avatars)
 const uploadDir = path.join(__dirname, "../../uploads/avatars");
 if (!fs.existsSync(uploadDir)) {
@@ -166,5 +169,38 @@ exports.getUserById = async (req, res) => {
   } catch (err) {
     console.error("Error fetching user:", err);
     res.status(500).json({ error: "Failed to fetch user" });
+  }
+};
+
+// GET /api/users/online
+exports.getOnlineUsers = async (req, res) => {
+  try {
+    const online = getOnlineUserIds();
+    res.json({ online });
+  } catch (err) {
+    console.error("getOnlineUsers error:", err);
+    res.status(500).json({ error: "Failed to fetch online users" });
+  }
+};
+
+// GET /api/users/presence?ids=1,2,3
+exports.getPresence = async (req, res) => {
+  try {
+    const idsRaw = req.query.ids || "";
+    const ids = String(idsRaw)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((v) => (Number.isNaN(Number(v)) ? v : Number(v)));
+
+    if (ids.length === 0) {
+      return res.status(400).json({ error: "ids query param is required" });
+    }
+
+    const presence = getPresenceForIds(ids);
+    res.json({ presence });
+  } catch (err) {
+    console.error("getPresence error:", err);
+    res.status(500).json({ error: "Failed to fetch presence" });
   }
 };
