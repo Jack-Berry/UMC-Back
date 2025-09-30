@@ -73,49 +73,55 @@ If you did not create an account, you can ignore this email.
 — Useless Men’s Co-Operative
     `,
     html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#111827; padding:40px 0;">
-  <tr>
-    <td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" 
-             style="background-color:#1f2937; border-radius:12px; padding:30px; font-family:Arial,sans-serif; color:#f9fafb;">
-        <tr>
-          <td align="center" style="padding-bottom:20px;">
-            <div style="background-color:#111827; padding:10px 20px; border-radius:8px; display:inline-block;">
-              <img src="https://www.uselessmen.org/assets/Main-yyq4P3wy.png"
-                   alt="Useless Men's Co-Operative Logo"
-                   width="120"
-                   style="display:block;" />
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td align="center">
-            <h1 style="margin:0; font-size:24px; font-weight:bold;">Welcome to UMC</h1>
-            <p style="margin:16px 0; font-size:16px; line-height:1.5; color:#d1d5db;">
-              Thanks for signing up! Please confirm your email address to get started.
-            </p>
-            <a href="${verifyUrl}"
-               role="button"
-               aria-label="Verify your email address for Useless Men's Co-Operative"
-               style="display:inline-block; padding:12px 24px; margin:20px 0; 
-                      background-color:#2563eb; color:#ffffff; font-weight:bold; 
-                      text-decoration:none; border-radius:8px; font-size:16px;">
-              Verify Email
-            </a>
-            <p style="margin-top:16px; font-size:14px; color:#9ca3af;">
-              This link expires in 24 hours.
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding-top:20px; font-size:12px; color:#6b7280;">
-            © ${new Date().getFullYear()} Useless Men's Co-Operative. All rights reserved.
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
+<!DOCTYPE html>
+<html>
+  <body style="margin:0; padding:0; background-color:#111827; font-family:Arial,sans-serif; color:#f9fafb;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" 
+           style="background-color:#111827; padding:40px 0;">
+      <tr>
+        <td align="center">
+          <table width="600" cellpadding="0" cellspacing="0" border="0" 
+                 style="background-color:#1f2937; border-radius:12px; padding:30px; text-align:center;">
+            <tr>
+              <td style="padding-bottom:20px;">
+                <div style="background-color:#111827; padding:10px 20px; border-radius:8px; display:inline-block;">
+                  <img src="https://www.uselessmen.org/assets/Main-yyq4P3wy.png"
+                       alt="Useless Men's Co-Operative Logo"
+                       width="120"
+                       style="display:block;" />
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h1 style="margin:0; font-size:24px; font-weight:bold; color:#f9fafb;">Welcome to UMC</h1>
+                <p style="margin:16px 0; font-size:16px; line-height:1.5; color:#d1d5db;">
+                  Thanks for signing up! Please confirm your email address to get started.
+                </p>
+                <a href="${verifyUrl}"
+                   role="button"
+                   aria-label="Verify your email address for Useless Men's Co-Operative"
+                   style="display:inline-block; padding:12px 24px; margin:20px 0; 
+                          background-color:#2563eb; color:#ffffff; font-weight:bold; 
+                          text-decoration:none; border-radius:8px; font-size:16px;">
+                  Verify Email
+                </a>
+                <p style="margin-top:16px; font-size:14px; color:#9ca3af;">
+                  This link expires in 24 hours.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-top:20px; font-size:12px; color:#6b7280;">
+                © ${new Date().getFullYear()} Useless Men's Co-Operative. All rights reserved.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
     `,
   });
 }
