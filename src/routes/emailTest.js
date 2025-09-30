@@ -1,5 +1,5 @@
-import express from "express";
-import { sendEmail } from "../utils/emailManager.js";
+const express = require("express");
+const { sendEmail } = require("../utils/emailManager.js");
 
 const router = express.Router();
 
