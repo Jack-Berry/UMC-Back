@@ -1,3 +1,4 @@
+// src/routes/emailTest.js
 const express = require("express");
 const { sendEmail } = require("../utils/emailManager.js");
 
@@ -16,7 +17,7 @@ router.post("/send-test", async (req, res) => {
     subject: "UMC Test Email",
     html: `
       <h1>UMC Test Email</h1>
-      <p>If you're reading this, email sending works</p>
+      <p>If you're reading this, email sending works 🎉</p>
     `,
   });
 
@@ -27,4 +28,4 @@ router.post("/send-test", async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;

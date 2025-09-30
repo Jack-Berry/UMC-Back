@@ -6,7 +6,7 @@ let transporter;
 /**
  * Initialise the transporter once and reuse it
  */
-export function initEmailTransporter() {
+function initEmailTransporter() {
   if (!transporter) {
     transporter = nodemailer.createTransport({
       host: "mail.gandi.net",
@@ -29,7 +29,7 @@ export function initEmailTransporter() {
  * @param {string} options.html - Email HTML body
  * @param {string} [options.text] - Optional plain text body
  */
-export async function sendEmail({ to, subject, html, text }) {
+async function sendEmail({ to, subject, html, text }) {
   try {
     const transporter = initEmailTransporter();
     const info = await transporter.sendMail({
@@ -40,10 +40,12 @@ export async function sendEmail({ to, subject, html, text }) {
       html,
     });
 
-    console.log("Email sent:", info.messageId);
+    console.log("📧 Email sent:", info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (err) {
-    console.error("Failed to send email:", err);
+    console.error("❌ Failed to send email:", err);
     return { success: false, error: err.message };
   }
 }
+
+module.exports = { initEmailTransporter, sendEmail };
