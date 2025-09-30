@@ -32,7 +32,6 @@ exports.uploadAvatar = async (req, res) => {
   }
 
   try {
-    // Build public URL (same pattern as news.image_url)
     const avatarUrl = `${req.protocol}://${req.get("host")}/uploads/avatars/${
       req.file.filename
     }`;
@@ -56,7 +55,6 @@ exports.uploadAvatar = async (req, res) => {
       }
     }
 
-    // Save **full URL** in DB (consistent with news.image_url)
     const result = await pool.query(
       "UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, avatar_url",
       [avatarUrl, userId]
@@ -77,7 +75,9 @@ exports.uploadAvatar = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   const userId = req.params.id;
   const {
-    name,
+    first_name,
+    last_name,
+    display_name,
     useful_at,
     useless_at,
     location,
@@ -90,20 +90,24 @@ exports.updateProfile = async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE users
-       SET name          = COALESCE($1, name),
-           useful_at     = COALESCE($2, useful_at),
-           useless_at    = COALESCE($3, useless_at),
-           location      = COALESCE($4, location),
-           lat           = COALESCE($5, lat),
-           lng           = COALESCE($6, lng),
-           show_location = COALESCE($7, show_location),
-           region        = COALESCE($8, region)
-       WHERE id = $9
-       RETURNING id, name, email, avatar_url, useful_at, useless_at,
-                 location, region, lat, lng, show_location,
-                 created_at, has_completed_assessment`,
+       SET first_name    = COALESCE($1, first_name),
+           last_name     = COALESCE($2, last_name),
+           display_name  = COALESCE($3, display_name),
+           useful_at     = COALESCE($4, useful_at),
+           useless_at    = COALESCE($5, useless_at),
+           location      = COALESCE($6, location),
+           lat           = COALESCE($7, lat),
+           lng           = COALESCE($8, lng),
+           show_location = COALESCE($9, show_location),
+           region        = COALESCE($10, region)
+       WHERE id = $11
+       RETURNING id, first_name, last_name, display_name, email, avatar_url,
+                 useful_at, useless_at, location, region, lat, lng, show_location,
+                 created_at, has_completed_assessment, dob, accepted_terms`,
       [
-        name ?? null,
+        first_name ?? null,
+        last_name ?? null,
+        display_name ?? null,
         useful_at ?? null,
         useless_at ?? null,
         location ?? null,
@@ -133,7 +137,7 @@ exports.searchUsers = async (req, res) => {
     if (!email) return res.status(400).json({ error: "Email is required" });
 
     const result = await pool.query(
-      `SELECT id, name, email, avatar_url 
+      `SELECT id, first_name, last_name, display_name, email, avatar_url 
        FROM users 
        WHERE email ILIKE $1 
        LIMIT 5`,
@@ -153,9 +157,9 @@ exports.getUserById = async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, name, email, avatar_url, useful_at, useless_at,
-              location, region, lat, lng, show_location,
-              created_at, has_completed_assessment
+      `SELECT id, first_name, last_name, display_name, email, avatar_url,
+              useful_at, useless_at, location, region, lat, lng, show_location,
+              created_at, has_completed_assessment, dob, accepted_terms
        FROM users
        WHERE id = $1`,
       [userId]

@@ -1,4 +1,3 @@
-// controllers/messageController.js
 const { pool } = require("../db");
 const { getIO } = require("../socket");
 const { verifyMatchToken } = require("../utils/matchToken");
@@ -85,7 +84,6 @@ exports.getOrCreateConversation = async (req, res) => {
 };
 
 // Send plaintext message
-// Send plaintext message
 exports.sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
@@ -126,22 +124,18 @@ exports.sendMessage = async (req, res) => {
       [conversationId, senderId, message.id]
     );
 
-    // --- 🔹 NEW: notify both the thread and the participants' user rooms ---
-    // Fetch all participants
+    // --- 🔹 notify both the thread and the participants' user rooms ---
     const { rows: participants } = await pool.query(
       `SELECT user_id FROM conversation_participants WHERE conversation_id = $1`,
       [conversationId]
     );
 
-    // Emit to the active thread room (anyone inside the chat)
     getIO().to(`thread_${conversationId}`).emit("newMessage", message);
 
-    // Emit to each participant's global user room (navbar/unread badge)
     for (const { user_id } of participants) {
       getIO().to(`user_${user_id}`).emit("newMessage", message);
     }
 
-    // Respond to the sender
     res.json(message);
   } catch (err) {
     console.error("Error sending message:", err.message);
@@ -193,19 +187,19 @@ exports.listThreads = async (req, res) => {
     const { rows } = await pool.query(
       `
       SELECT c.id,
-       c.created_at,
-       json_agg(json_build_object('id', u.id, 'name', u.name, 'avatar', u.avatar_url)) AS participants,
-       COALESCE((
-         SELECT COUNT(*)
-         FROM messages m
-         WHERE m.conversation_id = c.id
-           AND m.id > COALESCE((
-             SELECT last_read_msg_id
-             FROM message_reads mr
-             WHERE mr.user_id = $1 AND mr.conversation_id = c.id
-           ), 0)
-       ), 0) AS unread_count
-FROM conversations c
+             c.created_at,
+             json_agg(json_build_object('id', u.id, 'display_name', u.display_name, 'avatar', u.avatar_url)) AS participants,
+             COALESCE((
+               SELECT COUNT(*)
+               FROM messages m
+               WHERE m.conversation_id = c.id
+                 AND m.id > COALESCE((
+                   SELECT last_read_msg_id
+                   FROM message_reads mr
+                   WHERE mr.user_id = $1 AND mr.conversation_id = c.id
+                 ), 0)
+             ), 0) AS unread_count
+      FROM conversations c
       JOIN conversation_participants p ON p.conversation_id = c.id
       JOIN users u ON u.id = p.user_id
       LEFT JOIN LATERAL (

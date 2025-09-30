@@ -50,7 +50,7 @@ exports.acceptRequest = async (req, res) => {
       row.requester_id === userId ? row.receiver_id : row.requester_id;
 
     const friendData = await pool.query(
-      `SELECT u.id, u.name, u.avatar_url
+      `SELECT u.id, u.display_name, u.avatar_url
        FROM users u
        WHERE u.id = $1`,
       [otherUserId]
@@ -121,7 +121,7 @@ exports.getFriends = async (req, res) => {
     const userId = req.user.id;
 
     const result = await pool.query(
-      `SELECT u.id, u.name, u.avatar_url, f.status, f.created_at
+      `SELECT u.id, u.display_name, u.avatar_url, f.status, f.created_at
        FROM friends f
        JOIN users u ON (u.id = CASE 
          WHEN f.requester_id = $1 THEN f.receiver_id
@@ -144,7 +144,7 @@ exports.getPending = async (req, res) => {
     const userId = req.user.id;
 
     const result = await pool.query(
-      `SELECT f.id AS request_id, u.id AS requester_id, u.name, u.avatar_url, f.created_at
+      `SELECT f.id AS request_id, u.id AS requester_id, u.display_name, u.avatar_url, f.created_at
        FROM friends f
        JOIN users u ON f.requester_id = u.id
        WHERE f.receiver_id = $1 AND f.status = 'pending'`,

@@ -13,7 +13,7 @@ exports.getEvents = async (req, res) => {
       result = await pool.query(
         `
         SELECT e.*,
-               u.name AS creator_name,
+               u.display_name AS creator_name,
                CASE WHEN r.user_id IS NOT NULL THEN true ELSE false END AS is_registered,
                (6371 * acos(
                  cos(radians($2)) *
@@ -34,7 +34,7 @@ exports.getEvents = async (req, res) => {
       result = await pool.query(
         `
         SELECT e.*,
-               u.name AS creator_name,
+               u.display_name AS creator_name,
                CASE WHEN r.user_id IS NOT NULL THEN true ELSE false END AS is_registered
         FROM events e
         LEFT JOIN users u ON e.created_by = u.id
@@ -165,7 +165,7 @@ exports.getEventById = async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      `SELECT e.*, u.name AS creator_name
+      `SELECT e.*, u.display_name AS creator_name
        FROM events e
        LEFT JOIN users u ON e.created_by = u.id
        WHERE e.id = $1`,
@@ -181,7 +181,6 @@ exports.getEventById = async (req, res) => {
 };
 
 // Update event
-
 exports.updateEvent = async (req, res) => {
   const { id } = req.params;
   const {

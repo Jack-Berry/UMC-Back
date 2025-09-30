@@ -10,7 +10,12 @@ const { sendEmail } = require("../utils/emailManager");
 // -------------------
 function signAccess(user) {
   return jwt.sign(
-    { id: user.id, is_admin: user.is_admin, email: user.email },
+    {
+      id: user.id,
+      is_admin: user.is_admin,
+      email: user.email,
+      display_name: user.display_name,
+    },
     process.env.JWT_SECRET,
     { expiresIn: "1h" }
   );
@@ -25,7 +30,9 @@ function signRefresh(user) {
 function sanitizeUser(user) {
   return {
     id: user.id,
-    name: user.name,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    display_name: user.display_name,
     email: user.email,
     avatar_url: user.avatar_url,
     has_completed_assessment: user.has_completed_assessment,
@@ -41,6 +48,9 @@ function sanitizeUser(user) {
     category_scores: user.category_scores,
     tag_scores: user.tag_scores,
     created_at: user.created_at,
+    dob: user.dob,
+    accepted_terms: user.accepted_terms,
+    is_verified: user.is_verified,
   };
 }
 
@@ -130,10 +140,28 @@ If you did not create an account, you can ignore this email.
 // Controllers
 // -------------------
 const register = async (req, res) => {
-  const { name, email, password } = req.body;
+  const {
+    first_name,
+    last_name,
+    display_name,
+    email,
+    password,
+    dob,
+    accepted_terms,
+  } = req.body;
+
   const normalisedEmail = String(email || "")
     .trim()
     .toLowerCase();
+
+  if (!first_name || !last_name || !password || !dob) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  if (!accepted_terms) {
+    return res
+      .status(400)
+      .json({ error: "You must accept the terms and privacy policy" });
+  }
 
   try {
     // basic duplicate guard
@@ -146,8 +174,18 @@ const register = async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      "INSERT INTO users (name, email, password, is_verified) VALUES ($1, $2, $3, false) RETURNING *",
-      [name, normalisedEmail, hashed]
+      `INSERT INTO users (first_name, last_name, display_name, email, password, dob, accepted_terms, is_verified) 
+       VALUES ($1, $2, COALESCE($3, $1), $4, $5, $6, $7, false) 
+       RETURNING *`,
+      [
+        first_name.trim(),
+        last_name.trim(),
+        display_name && display_name.trim(),
+        normalisedEmail,
+        hashed,
+        dob,
+        true,
+      ]
     );
 
     const user = result.rows[0];
@@ -163,7 +201,6 @@ const register = async (req, res) => {
 
     await sendVerificationEmailTo(user, token);
 
-    // Do NOT sign-in yet; require verification first
     return res
       .status(201)
       .json({ message: "Registration successful. Please verify your email." });
@@ -187,7 +224,6 @@ const login = async (req, res) => {
 
     if (!user) return res.status(401).json({ error: "Invalid email" });
 
-    // Block login until email verified
     if (!user.is_verified) {
       return res
         .status(403)
@@ -308,7 +344,6 @@ const verifyEmail = async (req, res) => {
 };
 
 const resendVerification = async (req, res) => {
-  // Public endpoint; do not reveal whether the email exists.
   const email = String(req.body?.email || "")
     .trim()
     .toLowerCase();
@@ -324,7 +359,6 @@ const resendVerification = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      // Pretend success to avoid account enumeration
       return res
         .status(200)
         .json({ message: "If the account exists, a new link has been sent." });
@@ -337,7 +371,6 @@ const resendVerification = async (req, res) => {
         .json({ message: "If the account exists, a new link has been sent." });
     }
 
-    // Reuse existing unexpired token to reduce spam; otherwise create new
     let token = user.verification_token;
     let expires =
       user.verification_expires && new Date(user.verification_expires);
@@ -358,7 +391,6 @@ const resendVerification = async (req, res) => {
       .json({ message: "If the account exists, a new link has been sent." });
   } catch (err) {
     console.error("Resend verification error:", err);
-    // Still return generic success to avoid leaking details
     return res
       .status(200)
       .json({ message: "If the account exists, a new link has been sent." });
