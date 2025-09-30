@@ -105,6 +105,13 @@ const login = async (req, res) => {
 
     if (!user) return res.status(401).json({ error: "Invalid email" });
 
+    // 🚨 Block login if not verified
+    if (!user.is_verified) {
+      return res
+        .status(403)
+        .json({ error: "Please verify your email before logging in." });
+    }
+
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: "Invalid password" });
 
