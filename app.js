@@ -32,6 +32,7 @@ const friendRoutes = require("./src/routes/friendRoutes");
 const messageRoutes = require("./src/routes/messageRoutes");
 const matchRoutes = require("./src/routes/matchesRoutes");
 const tagsRoutes = require("./src/routes/tagsRoutes");
+const emailTestRoutes = require("./src/routes/emailTest");
 
 const { pool, checkConnection } = require("./src/db");
 const authenticateToken = require("./src/middleware/authMiddleware");
@@ -130,6 +131,7 @@ app.use("/api/friends", friendRoutes);
 app.use("/api/msg", messageRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/tags", tagsRoutes);
+app.use("/api/test", emailTestRoutes);
 
 // ---------- Admin routes ----------
 app.use("/api/admin/news", authenticateToken, requireAdmin, adminNewsRouter);
