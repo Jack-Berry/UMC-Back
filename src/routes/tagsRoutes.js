@@ -1,10 +1,21 @@
-// src/routes/tags.js
+// src/routes/tagsRoutes.js
 const express = require("express");
-const { getTags } = require("../controllers/tagsController");
-
 const router = express.Router();
+const {
+  getTags,
+  createTag,
+  updateTag,
+  deleteTag,
+} = require("../controllers/tagsController");
+const authenticateToken = require("../middleware/authMiddleware");
+const requireAdmin = require("../middleware/requireAdmin");
 
-// Public: GET /api/tags
+// ---------- Public ----------
 router.get("/", getTags);
+
+// ---------- Admin-only CRUD ----------
+router.post("/", authenticateToken, requireAdmin, createTag);
+router.put("/:id", authenticateToken, requireAdmin, updateTag);
+router.delete("/:id", authenticateToken, requireAdmin, deleteTag);
 
 module.exports = router;
