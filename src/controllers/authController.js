@@ -55,17 +55,59 @@ function buildFrontendUrl() {
 
 async function sendVerificationEmailTo(user, token) {
   const verifyUrl = `${buildFrontendUrl()}/verify-email?token=${token}`;
+
   return sendEmail({
     to: user.email,
     subject: "Verify your email",
+    text: `
+Welcome to UMC!
+
+Thanks for signing up. Please verify your email address by clicking the link below:
+
+${verifyUrl}
+
+This link expires in 24 hours.
+
+If you did not create an account, you can ignore this email.
+
+— Useless Men’s Co-Operative
+  `,
     html: `
-      <h1>Welcome to UMC</h1>
-      <p>Click below to verify your email:</p>
-      <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-      <p>This link expires in 24 hours.</p>
-      <hr />
-      <p>If you did not create an account, you can ignore this email.</p>
-    `,
+  <div style="font-family: Arial, sans-serif; background-color: #111827; padding: 40px; text-align: center; color: #f9fafb;">
+    <div style="max-width: 600px; margin: 0 auto; background: #1f2937; border-radius: 8px; padding: 30px;">
+
+      <!-- Logo -->
+      <img src="https://www.uselessmen.org/assets/Main-yyq4P3wy.png"
+           alt="Useless Men's Co-Operative Logo"
+           style="max-width: 120px; margin-bottom: 20px;" />
+
+      <!-- Heading -->
+      <h1 style="color: #f9fafb; font-size: 24px; margin-bottom: 10px;">Welcome to UMC</h1>
+      <p style="color: #d1d5db; font-size: 16px; margin-bottom: 30px;">
+        Thanks for signing up! Please confirm your email address to get started.
+      </p>
+
+      <!-- Button -->
+      <a href="${verifyUrl}"
+         role="button"
+         aria-label="Verify your email address for Useless Men's Co-Operative"
+         style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+        Verify Email
+      </a>
+
+      <!-- Expiry notice -->
+      <p style="color: #9ca3af; font-size: 14px; margin-top: 30px;">
+        This link expires in 24 hours.
+      </p>
+
+      <!-- Footer -->
+      <hr style="border: none; border-top: 1px solid #374151; margin: 30px 0;" />
+      <p style="color: #6b7280; font-size: 12px;">
+        &copy; ${new Date().getFullYear()} Useless Men's Co-Operative. All rights reserved.
+      </p>
+    </div>
+  </div>
+  `,
   });
 }
 
