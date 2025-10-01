@@ -196,58 +196,64 @@ exports.updateProfile = async (req, res) => {
 };
 
 // 🔹 Search users by email, first_name, last_name, display_name (any combination)
-// capped at 50 results, sorted by distance if lat/lng provided
+
 exports.searchUsers = async (req, res) => {
   try {
     const { email, first_name, last_name, display_name, lat, lng } = req.query;
 
-    // Build dynamic WHERE conditions
     const conditions = [];
     const values = [];
+    let idx = 1;
 
     if (email) {
+      conditions.push(`email ILIKE $${idx++}`);
       values.push(`%${email}%`);
-      conditions.push(`email ILIKE $${values.length}`);
     }
     if (first_name) {
+      conditions.push(`first_name ILIKE $${idx++}`);
       values.push(`%${first_name}%`);
-      conditions.push(`first_name ILIKE $${values.length}`);
     }
     if (last_name) {
+      conditions.push(`last_name ILIKE $${idx++}`);
       values.push(`%${last_name}%`);
-      conditions.push(`last_name ILIKE $${values.length}`);
     }
     if (display_name) {
+      conditions.push(`display_name ILIKE $${idx++}`);
       values.push(`%${display_name}%`);
-      conditions.push(`display_name ILIKE $${values.length}`);
     }
 
     if (conditions.length === 0) {
       return res
         .status(400)
-        .json({ error: "At least one search param required" });
+        .json({ error: "At least one search parameter is required" });
     }
 
-    // Add lat/lng for distance calculation if provided
-    let distanceExpr = "NULL";
-    if (lat && lng) {
-      values.push(lng, lat); // important: lng first, lat second (for point(lng,lat))
-      const lngIndex = values.length - 1;
-      const latIndex = values.length;
-      distanceExpr = `(point($${lngIndex}, $${latIndex}) <@> point(u.lng, u.lat)) * 1609.34`;
-    }
+    // lat/lng placeholders
+    const latIdx = idx++;
+    const lngIdx = idx++;
 
     const query = `
       SELECT id, first_name, last_name, display_name, email, avatar_url,
              lat, lng,
-             ${distanceExpr} as distance
-      FROM users u
-      WHERE ${conditions.join(" AND ")}
+             CASE
+               WHEN $${latIdx}::float IS NOT NULL AND $${lngIdx}::float IS NOT NULL 
+                    AND lat IS NOT NULL AND lng IS NOT NULL
+               THEN (point($${lngIdx}::float, $${latIdx}::float) <@> point(lng, lat)) * 1609.34
+               ELSE NULL
+             END as distance
+      FROM users
+      WHERE ${conditions.join(
+        " AND "
+      )}   -- 🔹 use AND so all provided fields must match
       ORDER BY distance NULLS LAST
       LIMIT 50
     `;
 
-    const result = await pool.query(query, values);
+    const result = await pool.query(query, [
+      ...values,
+      lat || null,
+      lng || null,
+    ]);
     res.json(result.rows);
   } catch (err) {
     console.error("Search users error:", err);
