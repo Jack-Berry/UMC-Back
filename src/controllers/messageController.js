@@ -1,6 +1,7 @@
 const { pool } = require("../db");
 const { getIO } = require("../socket");
 const { verifyMatchToken } = require("../utils/matchToken");
+const { deriveConvKey, encryptMessage, decryptMessage } = require("../crypto");
 
 // helper: check if two users are friends
 async function isFriends(userA, userB) {
@@ -64,7 +65,7 @@ exports.getOrCreateConversation = async (req, res) => {
     // Create conversation
     const { rows } = await pool.query(
       `INSERT INTO conversations (created_by, key_salt)
-       VALUES ($1, decode(repeat('00',32), 'hex'))
+       VALUES ($1, gen_random_bytes(32))
        RETURNING id`,
       [actorId]
     );
@@ -83,7 +84,6 @@ exports.getOrCreateConversation = async (req, res) => {
   }
 };
 
-// Send plaintext message
 exports.sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
@@ -92,53 +92,47 @@ exports.sendMessage = async (req, res) => {
 
     if (!text) return res.status(400).json({ error: "Message text required" });
 
-    const { rows: part } = await pool.query(
-      `SELECT 1 FROM conversation_participants 
-       WHERE conversation_id=$1 AND user_id=$2`,
-      [conversationId, senderId]
+    const { rows: conv } = await pool.query(
+      `SELECT key_salt FROM conversations WHERE id=$1`,
+      [conversationId]
     );
-    if (!part.length)
-      return res.status(403).json({ error: "Not a participant" });
+    if (!conv.length)
+      return res.status(404).json({ error: "Conversation not found" });
+
+    const key = deriveConvKey(conv[0].key_salt, conversationId);
+    const aadObj = { conversationId, senderId };
+
+    const { ciphertext, iv, tag, aad } = encryptMessage({
+      plaintext: text,
+      key,
+      aadObj,
+    });
 
     const { rows: msg } = await pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, text)
-       VALUES ($1,$2,$3)
-       RETURNING id, sender_id, text, created_at`,
-      [conversationId, senderId, text]
+      `INSERT INTO messages (conversation_id, sender_id, ciphertext, iv, tag, aad)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, sender_id, created_at`,
+      [
+        conversationId,
+        senderId,
+        ciphertext.toString("base64"),
+        iv.toString("base64"),
+        tag.toString("base64"),
+        aad.toString("base64"),
+      ]
     );
 
     const message = {
       id: msg[0].id,
       senderId: msg[0].sender_id,
-      text: msg[0].text,
+      text, // plaintext for immediate return to sender
       createdAt: msg[0].created_at,
       conversationId,
     };
 
-    // Mark this sender’s message as read for themselves
-    await pool.query(
-      `INSERT INTO message_reads (conversation_id, user_id, last_read_msg_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (conversation_id, user_id)
-       DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id`,
-      [conversationId, senderId, message.id]
-    );
-
-    // --- 🔹 notify both the thread and the participants' user rooms ---
-    const { rows: participants } = await pool.query(
-      `SELECT user_id FROM conversation_participants WHERE conversation_id = $1`,
-      [conversationId]
-    );
-
-    getIO().to(`thread_${conversationId}`).emit("newMessage", message);
-
-    for (const { user_id } of participants) {
-      getIO().to(`user_${user_id}`).emit("newMessage", message);
-    }
-
     res.json(message);
   } catch (err) {
-    console.error("Error sending message:", err.message);
+    console.error("Error sending message:", err);
     res.status(500).json({ error: "Server error" });
   }
 };
@@ -149,33 +143,43 @@ exports.listMessages = async (req, res) => {
     const userId = req.user.id;
     const conversationId = req.params.id;
 
-    const { rows: part } = await pool.query(
-      `SELECT 1 FROM conversation_participants 
-       WHERE conversation_id=$1 AND user_id=$2`,
-      [conversationId, userId]
+    const { rows: conv } = await pool.query(
+      `SELECT key_salt FROM conversations WHERE id=$1`,
+      [conversationId]
     );
-    if (!part.length)
-      return res.status(403).json({ error: "Not a participant" });
+    if (!conv.length)
+      return res.status(404).json({ error: "Conversation not found" });
+
+    const key = deriveConvKey(conv[0].key_salt, conversationId);
 
     const { rows: msgs } = await pool.query(
-      `SELECT id, sender_id, text, created_at
+      `SELECT id, sender_id, ciphertext, iv, tag, aad, created_at
        FROM messages
        WHERE conversation_id=$1
        ORDER BY id ASC`,
       [conversationId]
     );
 
-    const normalized = msgs.map((m) => ({
-      id: m.id,
-      senderId: m.sender_id,
-      text: m.text,
-      createdAt: m.created_at,
-      conversationId,
-    }));
+    const normalized = msgs.map((m) => {
+      const text = decryptMessage({
+        ciphertext: Buffer.from(m.ciphertext, "base64"),
+        key,
+        iv: Buffer.from(m.iv, "base64"),
+        tag: Buffer.from(m.tag, "base64"),
+        aad: Buffer.from(m.aad, "base64"),
+      });
+      return {
+        id: m.id,
+        senderId: m.sender_id,
+        text,
+        createdAt: m.created_at,
+        conversationId,
+      };
+    });
 
     res.json(normalized);
   } catch (err) {
-    console.error("Error listing messages:", err.message);
+    console.error("Error listing messages:", err);
     res.status(500).json({ error: "Server error" });
   }
 };
