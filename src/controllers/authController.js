@@ -59,8 +59,7 @@ function buildFrontendUrl() {
     process.env.NODE_ENV === "development"
       ? "http://localhost:5173"
       : "https://uselessmen.org";
-  const base = (process.env.FRONTEND_URL || fallback).replace(/\/+$/, "");
-  return base;
+  return (process.env.FRONTEND_URL || fallback).replace(/\/+$/, "");
 }
 
 async function sendVerificationEmailTo(user, token) {
@@ -69,51 +68,22 @@ async function sendVerificationEmailTo(user, token) {
   return sendEmail({
     to: user.email,
     subject: "Verify your email",
-    text: `
-Welcome to UMC!
-
-Thanks for signing up. Please verify your email address by clicking the link below:
-
-${verifyUrl}
-
-This link expires in 24 hours.
-
-If you did not create an account, you can ignore this email.
-
-— Useless Men’s Co-Operative
-    `,
+    text: `Welcome to UMC!\n\nPlease verify your email by clicking the link:\n\n${verifyUrl}\n\nThis link expires in 24 hours.`,
     html: `
 <!DOCTYPE html>
 <html>
   <body style="margin:0; padding:0; background-color:#111827; font-family:Arial,sans-serif; color:#f9fafb;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" 
-           style="background-color:#111827; padding:40px 0;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#111827; padding:40px 0;">
       <tr>
         <td align="center">
-          <table width="600" cellpadding="0" cellspacing="0" border="0" 
-                 style="background-color:#1f2937; border-radius:12px; padding:30px; text-align:center;">
-            <tr>
-              <td style="padding-bottom:20px;">
-                <div style="background-color:#111827; padding:10px 20px; border-radius:8px; display:inline-block;">
-                  <img src="https://www.uselessmen.org/assets/Main-yyq4P3wy.png"
-                       alt="Useless Men's Co-Operative Logo"
-                       width="120"
-                       style="display:block;" />
-                </div>
-              </td>
-            </tr>
+          <table width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#1f2937; border-radius:12px; padding:30px; text-align:center;">
             <tr>
               <td>
                 <h1 style="margin:0; font-size:24px; font-weight:bold; color:#f9fafb;">Welcome to UMC</h1>
                 <p style="margin:16px 0; font-size:16px; line-height:1.5; color:#d1d5db;">
-                  Thanks for signing up! Please confirm your email address to get started.
+                  Please confirm your email address to get started.
                 </p>
-                <a href="${verifyUrl}"
-                   role="button"
-                   aria-label="Verify your email address for Useless Men's Co-Operative"
-                   style="display:inline-block; padding:12px 24px; margin:20px 0; 
-                          background-color:#2563eb; color:#ffffff; font-weight:bold; 
-                          text-decoration:none; border-radius:8px; font-size:16px;">
+                <a href="${verifyUrl}" style="display:inline-block; padding:12px 24px; margin:20px 0; background-color:#2563eb; color:#ffffff; font-weight:bold; text-decoration:none; border-radius:8px; font-size:16px;">
                   Verify Email
                 </a>
                 <p style="margin-top:16px; font-size:14px; color:#9ca3af;">
@@ -154,7 +124,7 @@ const register = async (req, res) => {
     .trim()
     .toLowerCase();
 
-  if (!first_name || !last_name || !password || !dob) {
+  if (!first_name || !last_name || !password || !dob || !email) {
     return res.status(400).json({ error: "Missing required fields" });
   }
   if (!accepted_terms) {
@@ -163,8 +133,30 @@ const register = async (req, res) => {
       .json({ error: "You must accept the terms and privacy policy" });
   }
 
+  // Age check
+  const dobDate = new Date(dob);
+  const today = new Date();
+  const age = today.getFullYear() - dobDate.getFullYear();
+  const m = today.getMonth() - dobDate.getMonth();
+  if (
+    age < 18 ||
+    (age === 18 && (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())))
+  ) {
+    return res
+      .status(400)
+      .json({ error: "You must be at least 18 years old to register." });
+  }
+
+  // ✅ Display name format check
+  if (display_name && !/^[A-Za-z0-9_]+$/.test(display_name)) {
+    return res.status(400).json({
+      error:
+        "Display name may only contain letters, numbers, or underscores (no spaces).",
+    });
+  }
+
   try {
-    // basic duplicate guard
+    // check duplicate email
     const exists = await pool.query("SELECT id FROM users WHERE email=$1", [
       normalisedEmail,
     ]);
@@ -172,7 +164,19 @@ const register = async (req, res) => {
       return res.status(400).json({ error: "Email already registered" });
     }
 
+    // check duplicate display name
+    if (display_name) {
+      const dnCheck = await pool.query(
+        "SELECT id FROM users WHERE display_name=$1",
+        [display_name.trim()]
+      );
+      if (dnCheck.rows.length) {
+        return res.status(400).json({ error: "Display name already taken" });
+      }
+    }
+
     const hashed = await bcrypt.hash(password, 10);
+
     const result = await pool.query(
       `INSERT INTO users (first_name, last_name, display_name, email, password, dob, accepted_terms, is_verified) 
        VALUES ($1, $2, COALESCE($3, $1), $4, $5, $6, $7, false) 
@@ -184,7 +188,7 @@ const register = async (req, res) => {
         normalisedEmail,
         hashed,
         dob,
-        true,
+        accepted_terms,
       ]
     );
 
@@ -205,6 +209,11 @@ const register = async (req, res) => {
       .status(201)
       .json({ message: "Registration successful. Please verify your email." });
   } catch (err) {
+    if (err.code === "23505") {
+      return res
+        .status(400)
+        .json({ error: "Email or display name already exists." });
+    }
     console.error("Register error:", err);
     return res.status(500).json({ error: "User registration failed" });
   }
