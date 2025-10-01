@@ -195,19 +195,33 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// 🔹 Search users by email (for friend requests)
+// 🔹 Search users by email OR name (capped at 50, sorted by distance if coords provided)
 exports.searchUsers = async (req, res) => {
   try {
-    const { email } = req.query;
-    if (!email) return res.status(400).json({ error: "Email is required" });
+    const { q, lat, lng } = req.query;
+    if (!q) return res.status(400).json({ error: "Search query is required" });
 
-    const result = await pool.query(
-      `SELECT id, first_name, last_name, display_name, email, avatar_url 
-       FROM users 
-       WHERE email ILIKE $1 
-       LIMIT 5`,
-      [email + "%"]
-    );
+    // Partial match on email, first_name, last_name, or display_name
+    const search = `%${q}%`;
+
+    let query = `
+      SELECT id, first_name, last_name, display_name, email, avatar_url,
+             lat, lng,
+             CASE
+               WHEN $2::float IS NOT NULL AND $3::float IS NOT NULL AND lat IS NOT NULL AND lng IS NOT NULL
+               THEN (point($2::float, $3::float) <@> point(lng, lat)) * 1609.34 -- distance in meters
+               ELSE NULL
+             END as distance
+      FROM users
+      WHERE email ILIKE $1
+         OR first_name ILIKE $1
+         OR last_name ILIKE $1
+         OR display_name ILIKE $1
+      ORDER BY distance NULLS LAST
+      LIMIT 50
+    `;
+
+    const result = await pool.query(query, [search, lng || null, lat || null]);
 
     res.json(result.rows);
   } catch (err) {
