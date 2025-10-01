@@ -4,13 +4,25 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { pool } = require("../db");
 const { sendEmail } = require("../utils/emailManager");
+const {
+  validateName,
+  validateDisplayName,
+  validateEmail,
+  validatePassword,
+  validateDob,
+} = require("../utils/validation");
 
 // -------------------
 // Helpers
 // -------------------
 function signAccess(user) {
   return jwt.sign(
-    { id: user.id, is_admin: user.is_admin, email: user.email },
+    {
+      id: user.id,
+      is_admin: user.is_admin,
+      email: user.email,
+      display_name: user.display_name,
+    },
     process.env.JWT_SECRET,
     { expiresIn: "1h" }
   );
@@ -25,7 +37,9 @@ function signRefresh(user) {
 function sanitizeUser(user) {
   return {
     id: user.id,
-    name: user.name,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    display_name: user.display_name,
     email: user.email,
     avatar_url: user.avatar_url,
     has_completed_assessment: user.has_completed_assessment,
@@ -41,6 +55,9 @@ function sanitizeUser(user) {
     category_scores: user.category_scores,
     tag_scores: user.tag_scores,
     created_at: user.created_at,
+    dob: user.dob,
+    accepted_terms: user.accepted_terms,
+    is_verified: user.is_verified,
   };
 }
 
@@ -49,8 +66,7 @@ function buildFrontendUrl() {
     process.env.NODE_ENV === "development"
       ? "http://localhost:5173"
       : "https://uselessmen.org";
-  const base = (process.env.FRONTEND_URL || fallback).replace(/\/+$/, "");
-  return base;
+  return (process.env.FRONTEND_URL || fallback).replace(/\/+$/, "");
 }
 
 async function sendVerificationEmailTo(user, token) {
@@ -59,51 +75,22 @@ async function sendVerificationEmailTo(user, token) {
   return sendEmail({
     to: user.email,
     subject: "Verify your email",
-    text: `
-Welcome to UMC!
-
-Thanks for signing up. Please verify your email address by clicking the link below:
-
-${verifyUrl}
-
-This link expires in 24 hours.
-
-If you did not create an account, you can ignore this email.
-
-— Useless Men’s Co-Operative
-    `,
+    text: `Welcome to UMC!\n\nPlease verify your email by clicking the link:\n\n${verifyUrl}\n\nThis link expires in 24 hours.`,
     html: `
 <!DOCTYPE html>
 <html>
   <body style="margin:0; padding:0; background-color:#111827; font-family:Arial,sans-serif; color:#f9fafb;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" 
-           style="background-color:#111827; padding:40px 0;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#111827; padding:40px 0;">
       <tr>
         <td align="center">
-          <table width="600" cellpadding="0" cellspacing="0" border="0" 
-                 style="background-color:#1f2937; border-radius:12px; padding:30px; text-align:center;">
-            <tr>
-              <td style="padding-bottom:20px;">
-                <div style="background-color:#111827; padding:10px 20px; border-radius:8px; display:inline-block;">
-                  <img src="https://www.uselessmen.org/assets/Main-yyq4P3wy.png"
-                       alt="Useless Men's Co-Operative Logo"
-                       width="120"
-                       style="display:block;" />
-                </div>
-              </td>
-            </tr>
+          <table width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#1f2937; border-radius:12px; padding:30px; text-align:center;">
             <tr>
               <td>
                 <h1 style="margin:0; font-size:24px; font-weight:bold; color:#f9fafb;">Welcome to UMC</h1>
                 <p style="margin:16px 0; font-size:16px; line-height:1.5; color:#d1d5db;">
-                  Thanks for signing up! Please confirm your email address to get started.
+                  Please confirm your email address to get started.
                 </p>
-                <a href="${verifyUrl}"
-                   role="button"
-                   aria-label="Verify your email address for Useless Men's Co-Operative"
-                   style="display:inline-block; padding:12px 24px; margin:20px 0; 
-                          background-color:#2563eb; color:#ffffff; font-weight:bold; 
-                          text-decoration:none; border-radius:8px; font-size:16px;">
+                <a href="${verifyUrl}" style="display:inline-block; padding:12px 24px; margin:20px 0; background-color:#2563eb; color:#ffffff; font-weight:bold; text-decoration:none; border-radius:8px; font-size:16px;">
                   Verify Email
                 </a>
                 <p style="margin-top:16px; font-size:14px; color:#9ca3af;">
@@ -130,29 +117,93 @@ If you did not create an account, you can ignore this email.
 // Controllers
 // -------------------
 const register = async (req, res) => {
-  const { name, email, password } = req.body;
+  const {
+    first_name,
+    last_name,
+    display_name,
+    email,
+    password,
+    dob,
+    accepted_terms,
+  } = req.body;
+
   const normalisedEmail = String(email || "")
     .trim()
     .toLowerCase();
 
+  // 🔹 Run all validations
+  const errors = {};
+  const fnErr = validateName("First name", first_name, 2, 20);
+  if (fnErr) errors.first_name = fnErr;
+
+  const lnErr = validateName("Last name", last_name, 2, 20);
+  if (lnErr) errors.last_name = lnErr;
+
+  const dnErr = validateDisplayName(display_name, 4, 20);
+  if (dnErr) errors.display_name = dnErr;
+
+  const emErr = validateEmail(normalisedEmail);
+  if (emErr) errors.email = emErr;
+
+  const pwErr = validatePassword(password);
+  if (pwErr) errors.password = pwErr;
+
+  const dobErr = validateDob(dob);
+  if (dobErr) errors.dob = dobErr;
+
+  if (!accepted_terms) {
+    errors.accepted_terms = "You must accept the terms and privacy policy.";
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json({ errors });
+  }
+
   try {
-    // basic duplicate guard
+    // 🔹 Check duplicate email
     const exists = await pool.query("SELECT id FROM users WHERE email=$1", [
       normalisedEmail,
     ]);
     if (exists.rows.length) {
-      return res.status(400).json({ error: "Email already registered" });
+      return res
+        .status(400)
+        .json({ errors: { email: "Email already registered" } });
     }
 
+    // 🔹 Check duplicate display name
+    const dnCheck = await pool.query(
+      "SELECT id FROM users WHERE display_name=$1",
+      [display_name.trim()]
+    );
+    if (dnCheck.rows.length) {
+      return res
+        .status(400)
+        .json({ errors: { display_name: "Display name already taken" } });
+    }
+
+    // 🔹 Hash password
     const hashed = await bcrypt.hash(password, 10);
+
+    // 🔹 Insert new user
     const result = await pool.query(
-      "INSERT INTO users (name, email, password, is_verified) VALUES ($1, $2, $3, false) RETURNING *",
-      [name, normalisedEmail, hashed]
+      `INSERT INTO users 
+         (first_name, last_name, display_name, email, password, dob, accepted_terms, is_verified) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, false) 
+       RETURNING *`,
+      [
+        first_name.trim(),
+        last_name.trim(),
+        display_name.trim(),
+        normalisedEmail,
+        hashed,
+        dob,
+        accepted_terms,
+      ]
     );
 
     const user = result.rows[0];
 
-    // Generate verification token (24h)
+    // 🔹 Generate verification token (24h expiry)
     const token = crypto.randomBytes(32).toString("hex");
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -161,15 +212,49 @@ const register = async (req, res) => {
       [token, expires, user.id]
     );
 
+    // 🔹 Send verification email
     await sendVerificationEmailTo(user, token);
 
-    // Do NOT sign-in yet; require verification first
-    return res
-      .status(201)
-      .json({ message: "Registration successful. Please verify your email." });
+    return res.status(201).json({
+      message: "Registration successful. Please verify your email.",
+    });
   } catch (err) {
+    if (err.code === "23505") {
+      return res
+        .status(400)
+        .json({ error: "Email or display name already exists." });
+    }
     console.error("Register error:", err);
     return res.status(500).json({ error: "User registration failed" });
+  }
+};
+
+// 🔹 Check if a display name is available
+const checkDisplayName = async (req, res) => {
+  const { display_name } = req.query;
+
+  if (!display_name || !display_name.trim()) {
+    return res.status(400).json({ error: "Display name is required." });
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(display_name.trim())) {
+    return res.status(400).json({
+      error:
+        "Display name may only contain letters, numbers, or underscores (no spaces).",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT id FROM users WHERE display_name=$1",
+      [display_name.trim()]
+    );
+    if (result.rows.length > 0) {
+      return res.json({ available: false });
+    }
+    return res.json({ available: true });
+  } catch (err) {
+    console.error("checkDisplayName error:", err);
+    res.status(500).json({ error: "Failed to check display name" });
   }
 };
 
@@ -187,7 +272,6 @@ const login = async (req, res) => {
 
     if (!user) return res.status(401).json({ error: "Invalid email" });
 
-    // Block login until email verified
     if (!user.is_verified) {
       return res
         .status(403)
@@ -308,7 +392,6 @@ const verifyEmail = async (req, res) => {
 };
 
 const resendVerification = async (req, res) => {
-  // Public endpoint; do not reveal whether the email exists.
   const email = String(req.body?.email || "")
     .trim()
     .toLowerCase();
@@ -324,7 +407,6 @@ const resendVerification = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      // Pretend success to avoid account enumeration
       return res
         .status(200)
         .json({ message: "If the account exists, a new link has been sent." });
@@ -337,7 +419,6 @@ const resendVerification = async (req, res) => {
         .json({ message: "If the account exists, a new link has been sent." });
     }
 
-    // Reuse existing unexpired token to reduce spam; otherwise create new
     let token = user.verification_token;
     let expires =
       user.verification_expires && new Date(user.verification_expires);
@@ -358,7 +439,6 @@ const resendVerification = async (req, res) => {
       .json({ message: "If the account exists, a new link has been sent." });
   } catch (err) {
     console.error("Resend verification error:", err);
-    // Still return generic success to avoid leaking details
     return res
       .status(200)
       .json({ message: "If the account exists, a new link has been sent." });
@@ -372,4 +452,5 @@ module.exports = {
   fetchUserByID,
   verifyEmail,
   resendVerification,
+  checkDisplayName,
 };

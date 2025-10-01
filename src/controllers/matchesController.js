@@ -16,7 +16,7 @@ async function getMatches(req, res) {
   try {
     // 1) Current user
     const { rows: meRows } = await pool.query(
-      `SELECT id, name, email, lat, lng, category_scores, tag_scores
+      `SELECT id, display_name, email, lat, lng, category_scores, tag_scores
        FROM users
        WHERE id = $1`,
       [userId]
@@ -33,7 +33,7 @@ async function getMatches(req, res) {
     const { rows: candidates } = await pool.query(
       `SELECT *
        FROM (
-         SELECT id, name, email, avatar_url, lat, lng, category_scores, tag_scores,
+         SELECT id, display_name, email, avatar_url, lat, lng, category_scores, tag_scores,
                 (6371 * acos(
                   cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
                   sin(radians($2)) * sin(radians(lat))
@@ -88,7 +88,7 @@ async function getMatches(req, res) {
 
       return {
         id: u.id,
-        name: u.name,
+        display_name: u.display_name,
         email: u.email,
         avatar: u.avatar_url,
         matchScore: categoryScore + tagScore,
@@ -127,7 +127,7 @@ async function searchMatchesByTag(req, res) {
   try {
     // 1) Current user
     const { rows: meRows } = await pool.query(
-      `SELECT id, name, email, lat, lng, tag_scores
+      `SELECT id, display_name, email, lat, lng, tag_scores
        FROM users
        WHERE id = $1`,
       [userId]
@@ -144,7 +144,7 @@ async function searchMatchesByTag(req, res) {
     const { rows: candidates } = await pool.query(
       `SELECT *
        FROM (
-         SELECT id, name, email, avatar_url, lat, lng, tag_scores,
+         SELECT id, display_name, email, avatar_url, lat, lng, tag_scores,
                 (6371 * acos(
                   cos(radians($2)) * cos(radians(lat)) * cos(radians(lng) - radians($3)) +
                   sin(radians($2)) * sin(radians(lat))
@@ -169,7 +169,7 @@ async function searchMatchesByTag(req, res) {
         if (theirScore > 70) {
           return {
             id: u.id,
-            name: u.name,
+            display_name: u.display_name,
             email: u.email,
             avatar: u.avatar_url,
             tag,

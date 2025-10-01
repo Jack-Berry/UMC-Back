@@ -8,16 +8,16 @@ const authenticateToken = require("../middleware/authMiddleware");
 router.get("/online", authenticateToken, userController.getOnlineUsers);
 router.get("/presence", authenticateToken, userController.getPresence);
 
-// Avatar upload (with multer middleware)
-router.put(
-  "/:id/avatar",
+// 🔹 Avatar upload (no :id param now, always current user)
+router.patch(
+  "/profile/avatar",
   authenticateToken,
   userController.upload,
   userController.uploadAvatar
 );
 
-// Profile update
-router.put("/:id", authenticateToken, userController.updateProfile);
+// 🔹 Profile update (no :id param, always current user)
+router.patch("/profile", authenticateToken, userController.updateProfile);
 
 // Search users
 router.get("/search", authenticateToken, userController.searchUsers);
