@@ -1,7 +1,11 @@
 const { pool } = require("../db");
 const { getIO } = require("../socket");
 const { verifyMatchToken } = require("../utils/matchToken");
-const { deriveConvKey, encryptMessage, decryptMessage } = require("../crypto");
+const {
+  deriveConvKey,
+  encryptMessage,
+  decryptMessage,
+} = require("../utils/crypto");
 
 // helper: check if two users are friends
 async function isFriends(userA, userB) {
@@ -62,7 +66,7 @@ exports.getOrCreateConversation = async (req, res) => {
       return res.json({ id: found[0].id });
     }
 
-    // Create conversation
+    // Create conversation with random salt
     const { rows } = await pool.query(
       `INSERT INTO conversations (created_by, key_salt)
        VALUES ($1, gen_random_bytes(32))
@@ -125,10 +129,14 @@ exports.sendMessage = async (req, res) => {
     const message = {
       id: msg[0].id,
       senderId: msg[0].sender_id,
-      text, // plaintext for immediate return to sender
+      text, // plaintext for immediate return
       createdAt: msg[0].created_at,
       conversationId,
     };
+
+    // ✅ Broadcast over socket to the correct thread room
+    const io = getIO();
+    io.to(`thread_${conversationId}`).emit("newMessage", message);
 
     res.json(message);
   } catch (err) {
@@ -140,7 +148,6 @@ exports.sendMessage = async (req, res) => {
 // List messages
 exports.listMessages = async (req, res) => {
   try {
-    const userId = req.user.id;
     const conversationId = req.params.id;
 
     const { rows: conv } = await pool.query(
@@ -184,7 +191,7 @@ exports.listMessages = async (req, res) => {
   }
 };
 
-// List threads with full participant details, only if messages exist
+// List threads with participant details if messages exist
 exports.listThreads = async (req, res) => {
   try {
     const userId = req.user.id;
