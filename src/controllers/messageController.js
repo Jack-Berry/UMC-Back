@@ -88,6 +88,7 @@ exports.getOrCreateConversation = async (req, res) => {
   }
 };
 
+// Send a message
 exports.sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
@@ -134,7 +135,7 @@ exports.sendMessage = async (req, res) => {
       conversationId,
     };
 
-    // ✅ Broadcast over socket to the correct thread room
+    // Broadcast over socket to the correct thread room
     const io = getIO();
     io.to(`thread_${conversationId}`).emit("newMessage", message);
 
@@ -168,20 +169,43 @@ exports.listMessages = async (req, res) => {
     );
 
     const normalized = msgs.map((m) => {
-      const text = decryptMessage({
-        ciphertext: Buffer.from(m.ciphertext, "base64"),
-        key,
-        iv: Buffer.from(m.iv, "base64"),
-        tag: Buffer.from(m.tag, "base64"),
-        aad: Buffer.from(m.aad, "base64"),
-      });
-      return {
-        id: m.id,
-        senderId: m.sender_id,
-        text,
-        createdAt: m.created_at,
-        conversationId,
-      };
+      if (!m.ciphertext || !m.iv || !m.tag) {
+        // Legacy/empty row → avoid crash
+        return {
+          id: m.id,
+          senderId: m.sender_id,
+          text: "",
+          createdAt: m.created_at,
+          conversationId,
+        };
+      }
+
+      try {
+        const text = decryptMessage({
+          ciphertext: Buffer.from(m.ciphertext, "base64"),
+          key,
+          iv: Buffer.from(m.iv, "base64"),
+          tag: Buffer.from(m.tag, "base64"),
+          aad: m.aad ? Buffer.from(m.aad, "base64") : undefined,
+        });
+
+        return {
+          id: m.id,
+          senderId: m.sender_id,
+          text,
+          createdAt: m.created_at,
+          conversationId,
+        };
+      } catch (e) {
+        console.warn("⚠️ Failed to decrypt message", m.id, e.message);
+        return {
+          id: m.id,
+          senderId: m.sender_id,
+          text: "",
+          createdAt: m.created_at,
+          conversationId,
+        };
+      }
     });
 
     res.json(normalized);
@@ -191,7 +215,7 @@ exports.listMessages = async (req, res) => {
   }
 };
 
-// List threads with participant details if messages exist
+// List threads with participants
 exports.listThreads = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -255,14 +279,31 @@ exports.markRead = async (req, res) => {
   try {
     const userId = req.user.id;
     const conversationId = req.params.id;
-    const { lastReadMsgId } = req.body;
+
+    // find latest message in conversation
+    const { rows } = await pool.query(
+      `SELECT id FROM messages 
+       WHERE conversation_id=$1 
+       ORDER BY id DESC 
+       LIMIT 1`,
+      [conversationId]
+    );
+
+    if (!rows.length) {
+      return res.json({
+        success: true,
+        message: "No messages in conversation",
+      });
+    }
+
+    const lastMsgId = rows[0].id;
 
     await pool.query(
       `INSERT INTO message_reads (conversation_id, user_id, last_read_msg_id)
        VALUES ($1, $2, $3)
        ON CONFLICT (conversation_id, user_id)
        DO UPDATE SET last_read_msg_id = EXCLUDED.last_read_msg_id`,
-      [conversationId, userId, lastReadMsgId]
+      [conversationId, userId, lastMsgId]
     );
 
     res.json({ success: true });
