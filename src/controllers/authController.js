@@ -124,6 +124,7 @@ const register = async (req, res) => {
     .trim()
     .toLowerCase();
 
+  // 🔹 Basic required checks
   if (!first_name || !last_name || !password || !dob || !email) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -133,7 +134,7 @@ const register = async (req, res) => {
       .json({ error: "You must accept the terms and privacy policy" });
   }
 
-  // Age check
+  // 🔹 Age check
   const dobDate = new Date(dob);
   const today = new Date();
   const age = today.getFullYear() - dobDate.getFullYear();
@@ -147,8 +148,11 @@ const register = async (req, res) => {
       .json({ error: "You must be at least 18 years old to register." });
   }
 
-  // ✅ Display name format check
-  if (display_name && !/^[A-Za-z0-9_]+$/.test(display_name)) {
+  // 🔹 Display name required + format check
+  if (!display_name || !display_name.trim()) {
+    return res.status(400).json({ error: "Display name is required." });
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(display_name.trim())) {
     return res.status(400).json({
       error:
         "Display name may only contain letters, numbers, or underscores (no spaces).",
@@ -156,7 +160,7 @@ const register = async (req, res) => {
   }
 
   try {
-    // check duplicate email
+    // 🔹 Check duplicate email
     const exists = await pool.query("SELECT id FROM users WHERE email=$1", [
       normalisedEmail,
     ]);
@@ -164,27 +168,28 @@ const register = async (req, res) => {
       return res.status(400).json({ error: "Email already registered" });
     }
 
-    // check duplicate display name
-    if (display_name) {
-      const dnCheck = await pool.query(
-        "SELECT id FROM users WHERE display_name=$1",
-        [display_name.trim()]
-      );
-      if (dnCheck.rows.length) {
-        return res.status(400).json({ error: "Display name already taken" });
-      }
+    // 🔹 Check duplicate display name
+    const dnCheck = await pool.query(
+      "SELECT id FROM users WHERE display_name=$1",
+      [display_name.trim()]
+    );
+    if (dnCheck.rows.length) {
+      return res.status(400).json({ error: "Display name already taken" });
     }
 
+    // 🔹 Hash password
     const hashed = await bcrypt.hash(password, 10);
 
+    // 🔹 Insert new user
     const result = await pool.query(
-      `INSERT INTO users (first_name, last_name, display_name, email, password, dob, accepted_terms, is_verified) 
-       VALUES ($1, $2, COALESCE($3, $1), $4, $5, $6, $7, false) 
+      `INSERT INTO users 
+         (first_name, last_name, display_name, email, password, dob, accepted_terms, is_verified) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, false) 
        RETURNING *`,
       [
         first_name.trim(),
         last_name.trim(),
-        display_name && display_name.trim(),
+        display_name.trim(),
         normalisedEmail,
         hashed,
         dob,
@@ -194,7 +199,7 @@ const register = async (req, res) => {
 
     const user = result.rows[0];
 
-    // Generate verification token (24h)
+    // 🔹 Generate verification token (24h expiry)
     const token = crypto.randomBytes(32).toString("hex");
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -203,11 +208,12 @@ const register = async (req, res) => {
       [token, expires, user.id]
     );
 
+    // 🔹 Send verification email
     await sendVerificationEmailTo(user, token);
 
-    return res
-      .status(201)
-      .json({ message: "Registration successful. Please verify your email." });
+    return res.status(201).json({
+      message: "Registration successful. Please verify your email.",
+    });
   } catch (err) {
     if (err.code === "23505") {
       return res
@@ -216,6 +222,35 @@ const register = async (req, res) => {
     }
     console.error("Register error:", err);
     return res.status(500).json({ error: "User registration failed" });
+  }
+};
+
+// 🔹 Check if a display name is available
+exports.checkDisplayName = async (req, res) => {
+  const { display_name } = req.query;
+
+  if (!display_name || !display_name.trim()) {
+    return res.status(400).json({ error: "Display name is required." });
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(display_name.trim())) {
+    return res.status(400).json({
+      error:
+        "Display name may only contain letters, numbers, or underscores (no spaces).",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT id FROM users WHERE display_name=$1",
+      [display_name.trim()]
+    );
+    if (result.rows.length > 0) {
+      return res.json({ available: false });
+    }
+    return res.json({ available: true });
+  } catch (err) {
+    console.error("checkDisplayName error:", err);
+    res.status(500).json({ error: "Failed to check display name" });
   }
 };
 

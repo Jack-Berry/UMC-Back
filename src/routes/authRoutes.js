@@ -12,6 +12,7 @@ const {
 } = require("../controllers/authController");
 
 router.post("/register", register);
+router.get("/check-displayname", userController.checkDisplayName);
 router.post("/login", login);
 router.post("/refresh", refresh);
 
