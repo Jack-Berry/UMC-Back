@@ -4,6 +4,13 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { pool } = require("../db");
 const { sendEmail } = require("../utils/emailManager");
+const {
+  validateName,
+  validateDisplayName,
+  validateEmail,
+  validatePassword,
+  validateDob,
+} = require("../utils/validation");
 
 // -------------------
 // Helpers
@@ -124,39 +131,32 @@ const register = async (req, res) => {
     .trim()
     .toLowerCase();
 
-  // 🔹 Basic required checks
-  if (!first_name || !last_name || !password || !dob || !email) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
+  // 🔹 Run all validations
+  const errors = {};
+  const fnErr = validateName("First name", first_name, 2, 20);
+  if (fnErr) errors.first_name = fnErr;
+
+  const lnErr = validateName("Last name", last_name, 2, 20);
+  if (lnErr) errors.last_name = lnErr;
+
+  const dnErr = validateDisplayName(display_name, 4, 20);
+  if (dnErr) errors.display_name = dnErr;
+
+  const emErr = validateEmail(normalisedEmail);
+  if (emErr) errors.email = emErr;
+
+  const pwErr = validatePassword(password);
+  if (pwErr) errors.password = pwErr;
+
+  const dobErr = validateDob(dob);
+  if (dobErr) errors.dob = dobErr;
+
   if (!accepted_terms) {
-    return res
-      .status(400)
-      .json({ error: "You must accept the terms and privacy policy" });
+    errors.accepted_terms = "You must accept the terms and privacy policy.";
   }
 
-  // 🔹 Age check
-  const dobDate = new Date(dob);
-  const today = new Date();
-  const age = today.getFullYear() - dobDate.getFullYear();
-  const m = today.getMonth() - dobDate.getMonth();
-  if (
-    age < 18 ||
-    (age === 18 && (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())))
-  ) {
-    return res
-      .status(400)
-      .json({ error: "You must be at least 18 years old to register." });
-  }
-
-  // 🔹 Display name required + format check
-  if (!display_name || !display_name.trim()) {
-    return res.status(400).json({ error: "Display name is required." });
-  }
-  if (!/^[A-Za-z0-9_]+$/.test(display_name.trim())) {
-    return res.status(400).json({
-      error:
-        "Display name may only contain letters, numbers, or underscores (no spaces).",
-    });
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json({ errors });
   }
 
   try {
@@ -165,7 +165,9 @@ const register = async (req, res) => {
       normalisedEmail,
     ]);
     if (exists.rows.length) {
-      return res.status(400).json({ error: "Email already registered" });
+      return res
+        .status(400)
+        .json({ errors: { email: "Email already registered" } });
     }
 
     // 🔹 Check duplicate display name
@@ -174,7 +176,9 @@ const register = async (req, res) => {
       [display_name.trim()]
     );
     if (dnCheck.rows.length) {
-      return res.status(400).json({ error: "Display name already taken" });
+      return res
+        .status(400)
+        .json({ errors: { display_name: "Display name already taken" } });
     }
 
     // 🔹 Hash password

@@ -1,7 +1,15 @@
+// src/controllers/userController.js
 const fs = require("fs");
 const path = require("path");
 const { pool } = require("../db");
 const multer = require("multer");
+const {
+  validateName,
+  validateDisplayName,
+  validateEmail,
+  validatePassword,
+  validateDob,
+} = require("../utils/validation");
 
 // presence helpers
 const { getOnlineUserIds, getPresenceForIds } = require("../socket");
@@ -95,29 +103,23 @@ exports.updateProfile = async (req, res) => {
 
     // First name
     if (first_name !== undefined) {
-      if (!first_name.trim()) {
-        errors.first_name = "First name cannot be empty.";
-      } else {
-        updates.first_name = first_name.trim();
-      }
+      const fnErr = validateName("First name", first_name, 2, 20);
+      if (fnErr) errors.first_name = fnErr;
+      else updates.first_name = first_name.trim();
     }
 
     // Last name
     if (last_name !== undefined) {
-      if (!last_name.trim()) {
-        errors.last_name = "Last name cannot be empty.";
-      } else {
-        updates.last_name = last_name.trim();
-      }
+      const lnErr = validateName("Last name", last_name, 2, 20);
+      if (lnErr) errors.last_name = lnErr;
+      else updates.last_name = last_name.trim();
     }
 
     // Display name validation + uniqueness
     if (display_name !== undefined) {
-      if (!display_name.trim()) {
-        errors.display_name = "Display name cannot be empty.";
-      } else if (!/^[A-Za-z0-9_]+$/.test(display_name)) {
-        errors.display_name =
-          "Display name may only contain letters, numbers, or underscores.";
+      const dnErr = validateDisplayName(display_name, 4, 20);
+      if (dnErr) {
+        errors.display_name = dnErr;
       } else {
         const dnCheck = await pool.query(
           "SELECT id FROM users WHERE display_name=$1 AND id<>$2",
@@ -133,22 +135,12 @@ exports.updateProfile = async (req, res) => {
 
     // DOB + age check
     if (dob !== undefined) {
-      const dobDate = new Date(dob);
-      const today = new Date();
-      const age = today.getFullYear() - dobDate.getFullYear();
-      const m = today.getMonth() - dobDate.getMonth();
-      const under18 =
-        age < 18 ||
-        (age === 18 &&
-          (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())));
-      if (under18) {
-        errors.dob = "You must be at least 18 years old.";
-      } else {
-        updates.dob = dob;
-      }
+      const dobErr = validateDob(dob);
+      if (dobErr) errors.dob = dobErr;
+      else updates.dob = dob;
     }
 
-    // Other optional fields
+    // Other optional fields (not validated here)
     if (useful_at !== undefined) updates.useful_at = useful_at;
     if (useless_at !== undefined) updates.useless_at = useless_at;
     if (location !== undefined) updates.location = location;
