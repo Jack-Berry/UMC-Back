@@ -94,7 +94,6 @@ exports.updateProfile = async (req, res) => {
     lng,
     show_location,
     region,
-    bio,
   } = req.body;
 
   try {
@@ -148,7 +147,6 @@ exports.updateProfile = async (req, res) => {
     if (lng !== undefined) updates.lng = lng;
     if (show_location !== undefined) updates.show_location = show_location;
     if (region !== undefined) updates.region = region;
-    if (bio !== undefined) updates.bio = bio.trim();
 
     // If validation errors → stop
     if (Object.keys(errors).length > 0) {
@@ -169,7 +167,7 @@ exports.updateProfile = async (req, res) => {
       `UPDATE users SET ${setClause} WHERE id=$${values.length} 
        RETURNING id, first_name, last_name, display_name, email, avatar_url,
                  useful_at, useless_at, location, region, lat, lng, show_location,
-                 created_at, has_completed_assessment, dob, accepted_terms, bio`,
+                 created_at, has_completed_assessment, dob, accepted_terms`,
       values
     );
 
@@ -187,7 +185,7 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// 🔹 Search users by explicit columns (email, first_name, last_name, display_name)
+// 🔹 Search users by explicit columns
 exports.searchUsers = async (req, res) => {
   try {
     const { email, first_name, last_name, display_name, lat, lng } = req.query;
@@ -270,7 +268,7 @@ exports.getUserById = async (req, res) => {
     const result = await pool.query(
       `SELECT id, first_name, last_name, display_name, email, avatar_url,
               useful_at, useless_at, location, region, lat, lng, show_location,
-              created_at, has_completed_assessment, dob, accepted_terms, bio
+              created_at, has_completed_assessment, dob, accepted_terms
        FROM users
        WHERE id = $1`,
       [userId]
