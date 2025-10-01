@@ -195,34 +195,66 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// 🔹 Search users by email OR name (capped at 50, sorted by distance if coords provided)
+// 🔹 Search users by email and/or first_name and/or last_name (capped at 50, sorted by distance if coords provided)
 exports.searchUsers = async (req, res) => {
   try {
-    const { q, lat, lng } = req.query;
-    if (!q) return res.status(400).json({ error: "Search query is required" });
+    const { email, first_name, last_name, display_name, lat, lng } = req.query;
 
-    // Partial match on email, first_name, last_name, or display_name
-    const search = `%${q}%`;
+    if (!email && !first_name && !last_name && !display_name) {
+      return res
+        .status(400)
+        .json({ error: "At least one search field is required" });
+    }
 
-    let query = `
+    const conditions = [];
+    const values = [];
+    let idx = 1;
+
+    if (email) {
+      conditions.push(`email ILIKE $${idx++}`);
+      values.push(`%${email.trim()}%`);
+    }
+    if (first_name) {
+      conditions.push(`first_name ILIKE $${idx++}`);
+      values.push(`%${first_name.trim()}%`);
+    }
+    if (last_name) {
+      conditions.push(`last_name ILIKE $${idx++}`);
+      values.push(`%${last_name.trim()}%`);
+    }
+    if (display_name) {
+      conditions.push(`display_name ILIKE $${idx++}`);
+      values.push(`%${display_name.trim()}%`);
+    }
+
+    // Safety check
+    if (conditions.length === 0) {
+      return res.status(400).json({ error: "Invalid search parameters" });
+    }
+
+    // Add lat/lng for distance calc
+    values.push(lng || null, lat || null);
+
+    const sql = `
       SELECT id, first_name, last_name, display_name, email, avatar_url,
              lat, lng,
              CASE
-               WHEN $2::float IS NOT NULL AND $3::float IS NOT NULL AND lat IS NOT NULL AND lng IS NOT NULL
-               THEN (point($2::float, $3::float) <@> point(lng, lat)) * 1609.34 -- distance in meters
+               WHEN $${values.length - 1}::float IS NOT NULL AND $${
+      values.length
+    }::float IS NOT NULL
+                 AND lat IS NOT NULL AND lng IS NOT NULL
+               THEN (point($${values.length - 1}::float, $${
+      values.length
+    }::float) <@> point(lng, lat)) * 1609.34 -- distance in meters
                ELSE NULL
              END as distance
       FROM users
-      WHERE email ILIKE $1
-         OR first_name ILIKE $1
-         OR last_name ILIKE $1
-         OR display_name ILIKE $1
+      WHERE ${conditions.join(" AND ")}
       ORDER BY distance NULLS LAST
       LIMIT 50
     `;
 
-    const result = await pool.query(query, [search, lng || null, lat || null]);
-
+    const result = await pool.query(sql, values);
     res.json(result.rows);
   } catch (err) {
     console.error("Search users error:", err);
