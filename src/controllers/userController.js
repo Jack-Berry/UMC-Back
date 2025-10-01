@@ -195,21 +195,14 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// 🔹 Search users by email, first_name, last_name, display_name (any combination)
+// 🔹 Search users by explicit columns (email, first_name, last_name, display_name)
 exports.searchUsers = async (req, res) => {
   try {
     const { email, first_name, last_name, display_name, lat, lng } = req.query;
 
-    console.log("🔎 Incoming search params:", {
-      email,
-      first_name,
-      last_name,
-      display_name,
-      lat,
-      lng,
-    });
+    console.log("🔎 Incoming search params:", req.query);
 
-    // Build WHERE conditions dynamically
+    // Build conditions + values dynamically
     const conditions = [];
     const values = [];
     let idx = 1;
@@ -231,40 +224,45 @@ exports.searchUsers = async (req, res) => {
       values.push(`%${display_name}%`);
     }
 
-    console.log("🛠 Conditions:", conditions);
-    console.log("🛠 Values:", values);
-
     if (conditions.length === 0) {
       return res
         .status(400)
-        .json({ error: "At least one search field required" });
+        .json({ error: "At least one search parameter is required" });
     }
 
-    let query = `
+    // distance calculation (Haversine, meters)
+    const distanceExpr = `
+      CASE
+        WHEN $${idx}::float IS NOT NULL AND $${idx + 1}::float IS NOT NULL 
+             AND lat IS NOT NULL AND lng IS NOT NULL
+        THEN (
+          6371000 * acos(
+            cos(radians($${idx})) * cos(radians(lat)) * cos(radians(lng) - radians($${
+      idx + 1
+    }))
+            + sin(radians($${idx})) * sin(radians(lat))
+          )
+        )
+        ELSE NULL
+      END
+    `;
+
+    const sql = `
       SELECT id, first_name, last_name, display_name, email, avatar_url,
              lat, lng,
-             CASE
-               WHEN $${idx}::float IS NOT NULL AND $${
-      idx + 1
-    }::float IS NOT NULL 
-                    AND lat IS NOT NULL AND lng IS NOT NULL
-               THEN (point($${idx}::float, $${
-      idx + 1
-    }::float) <@> point(lng, lat)) * 1609.34
-               ELSE NULL
-             END as distance
+             ${distanceExpr} as distance
       FROM users
       WHERE ${conditions.join(" AND ")}
       ORDER BY distance NULLS LAST
       LIMIT 50
     `;
 
-    values.push(lng || null, lat || null);
+    values.push(lat || null, lng || null);
 
-    console.log("📝 Final SQL:", query);
-    console.log("📦 Final Values:", values);
+    console.log("📝 Final SQL:", sql);
+    console.log("📦 Values:", values);
 
-    const result = await pool.query(query, values);
+    const result = await pool.query(sql, values);
     res.json(result.rows);
   } catch (err) {
     console.error("❌ Search users error:", err);
