@@ -230,7 +230,7 @@ const register = async (req, res) => {
 };
 
 // 🔹 Check if a display name is available
-exports.checkDisplayName = async (req, res) => {
+const checkDisplayName = async (req, res) => {
   const { display_name } = req.query;
 
   if (!display_name || !display_name.trim()) {
@@ -452,4 +452,5 @@ module.exports = {
   fetchUserByID,
   verifyEmail,
   resendVerification,
+  checkDisplayName,
 };

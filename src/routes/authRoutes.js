@@ -9,7 +9,7 @@ const {
   fetchUserByID,
   verifyEmail,
   resendVerification,
-  checkDisplayName, // ✅ import from authController now
+  checkDisplayName,
 } = require("../controllers/authController");
 
 // Public routes
@@ -17,7 +17,7 @@ router.post("/register", register);
 router.post("/login", login);
 router.post("/refresh", refresh);
 
-// ✅ check displayname route now works
+// check displayname route now works
 router.get("/check-displayname", checkDisplayName);
 
 // public verification endpoints
